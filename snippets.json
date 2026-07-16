@@ -3,12 +3,12 @@
     "label": "功能",
     "items": [
       {
-        "label": "功能範本",
-        "text": "# 角色\n你是一位 <領域> 專家。\n\n# 目標\n<描述你想達成的目標>\n\n# 背景\n<提供背景與已知資訊>\n\n# 步驟\n1. <步驟一>\n2. <步驟二>\n\n# 輸出格式\n<描述期望的輸出格式>\n\n# 限制\n- <限制條件>\n"
-      },
-      {
         "label": "角色設定",
         "text": "You are an expert assistant. "
+      },
+      {
+        "label": "送出",
+        "text": "COMMIT + PUSH"
       },
       {
         "label": "任務目標",
@@ -25,6 +25,10 @@
       {
         "label": "限制條件",
         "text": "限制條件：\n- "
+      },
+      {
+        "label": "PR",
+        "text": "CREATE PR."
       },
       {
         "label": "範例",

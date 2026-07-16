@@ -1279,9 +1279,39 @@
         persistSnippets(true);
         renderSnipManager();
       });
+
+      const moveItem = (from, to) => {
+        const arr = SNIPPETS[snipMgrCat].items;
+        if (to < 0 || to >= arr.length) return;
+        const [moved] = arr.splice(from, 1);
+        arr.splice(to, 0, moved);
+        persistSnippets(true);
+        renderSnipManager();
+      };
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'snip-move';
+      up.textContent = '\u2191';
+      up.title = t('snip.manage.moveUp');
+      up.disabled = i === 0;
+      up.addEventListener('click', () => moveItem(i, i - 1));
+      const down = document.createElement('button');
+      down.type = 'button';
+      down.className = 'snip-move';
+      down.textContent = '\u2193';
+      down.title = t('snip.manage.moveDown');
+      down.disabled = i === items.length - 1;
+      down.addEventListener('click', () => moveItem(i, i + 1));
+
+      const actions = document.createElement('div');
+      actions.className = 'snip-row-actions';
+      actions.appendChild(up);
+      actions.appendChild(down);
+      actions.appendChild(del);
+
       row.appendChild(labelIn);
       row.appendChild(textIn);
-      row.appendChild(del);
+      row.appendChild(actions);
       list.appendChild(row);
     });
   }

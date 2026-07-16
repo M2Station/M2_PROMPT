@@ -1222,8 +1222,9 @@ kbd {
 /* ---------- Snippet manager ---------- */
 .modal-wide {
   width: min(600px, 94vw);
+  height: min(680px, 88vh);
   min-width: 380px;
-  min-height: 300px;
+  min-height: 340px;
   max-width: 96vw;
   max-height: 92vh;
   display: flex;
@@ -1243,9 +1244,12 @@ kbd {
 
 .modal-wide .modal-body {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 14px 16px;
   font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Compact, consistent form controls inside the manager. */
@@ -1303,11 +1307,23 @@ kbd {
   justify-content: center;
 }
 
+.snip-items-field {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.snip-items-field > label {
+  flex: 0 0 auto;
+}
+
 .snip-edit-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 260px;
+  flex: 1 1 auto;
+  min-height: 150px;
   overflow: auto;
   padding: 8px;
   border: 1px solid var(--border);
@@ -1317,9 +1333,39 @@ kbd {
 
 .snip-edit-row {
   display: grid;
-  grid-template-columns: 116px 1fr 28px;
+  grid-template-columns: 112px 1fr auto;
   gap: 6px;
   align-items: start;
+}
+
+.snip-row-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: center;
+}
+
+.snip-move {
+  width: 28px;
+  height: 20px;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.snip-move:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.snip-move:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .snip-edit-row > input {

@@ -94,6 +94,8 @@
   "snip.manage.delCat": "刪除分類",
   "snip.manage.delCatConfirm": "確定要刪除此分類與其所有片語？",
   "snip.manage.items": "此分類的片語",
+  "snip.manage.moveUp": "上移",
+  "snip.manage.moveDown": "下移",
   "snip.manage.empty": "此分類尚無片語。",
   "snip.manage.add": "新增片語（可直接貼上內容）",
   "snip.manage.labelPh": "按鈕名稱（留空＝取內容第一行）",
