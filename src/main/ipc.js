@@ -404,6 +404,30 @@ function registerIpc() {
     }
   });
 
+  // Open the editable snippets.json in the OS default application so power
+  // users can edit it by hand. Ensures the external editable copy exists first
+  // (seeding it from the packaged project-root copy when missing).
+  ipcMain.handle('snippets:openFile', async () => {
+    try {
+      const external = path.join(appRoot(), 'snippets.json');
+      if (!fs.existsSync(external)) {
+        let seed = '{}\n';
+        try {
+          const rootCopy = path.join(__dirname, '..', '..', 'snippets.json');
+          if (fs.existsSync(rootCopy)) seed = fs.readFileSync(rootCopy, 'utf8');
+        } catch (_e) {
+          /* fall back to an empty object */
+        }
+        fs.writeFileSync(external, seed, 'utf8');
+      }
+      const err = await shell.openPath(external);
+      if (err) return { ok: false, error: err };
+      return { ok: true, path: external };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
   ipcMain.handle('i18n:load', (_e, lang) => {
     const safe = lang === 'en' ? 'en' : 'zh';
     try {

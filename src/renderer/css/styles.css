@@ -1231,6 +1231,8 @@ kbd {
   flex-direction: column;
   resize: both;
   overflow: hidden;
+  /* Base text size for the dialog; the A-/A/A+ controls adjust this live. */
+  --snip-font: 12.5px;
 }
 
 .modal-wide .modal-head {
@@ -1242,12 +1244,50 @@ kbd {
   font-size: 14px;
 }
 
+.modal-head-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.snip-font-ctrl {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--tabbar-bg);
+  cursor: default;
+}
+
+.snip-font-ctrl button {
+  min-width: 26px;
+  height: 22px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 700;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+
+.snip-font-ctrl button:hover {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
 .modal-wide .modal-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 14px 16px;
-  font-size: 12.5px;
+  font-size: var(--snip-font);
   display: flex;
   flex-direction: column;
 }
@@ -1256,7 +1296,7 @@ kbd {
 .modal-wide input,
 .modal-wide select,
 .modal-wide textarea {
-  font-size: 12.5px;
+  font-size: var(--snip-font);
   padding: 6px 9px;
   border-radius: 6px;
 }
@@ -1372,7 +1412,7 @@ kbd {
   max-height: 120px;
   resize: vertical;
   font-family: var(--font-code);
-  font-size: 12px;
+  font-size: var(--snip-font);
   line-height: 1.4;
 }
 
@@ -1384,7 +1424,7 @@ kbd {
 
 .snip-edit-empty {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: var(--snip-font);
   padding: 6px 2px;
 }
 

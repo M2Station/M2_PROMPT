@@ -232,6 +232,32 @@
     setEditorFont(editorFontPx() + delta);
   }
 
+  // SNIPPET-manager dialog font size (persisted). Scales the text of the
+  // "SNIPPET Settings" popup via the --snip-font CSS variable so the A-/A/A+
+  // controls enlarge or shrink everything inside it at once.
+  const SNIP_FONT_DEFAULT = 12.5;
+
+  function snipMgrFontPx() {
+    const v = Number(state.snipMgrFontSize);
+    return Number.isFinite(v) ? Math.max(10, Math.min(22, v)) : SNIP_FONT_DEFAULT;
+  }
+
+  function applySnipMgrFont() {
+    const modal = el('snipManagerModal');
+    const dialog = modal && modal.querySelector('.modal');
+    if (dialog) dialog.style.setProperty('--snip-font', snipMgrFontPx() + 'px');
+  }
+
+  function setSnipMgrFont(size) {
+    state.snipMgrFontSize = Math.max(10, Math.min(22, size));
+    applySnipMgrFont();
+    saveState();
+  }
+
+  function bumpSnipMgrFont(delta) {
+    setSnipMgrFont(snipMgrFontPx() + delta);
+  }
+
   // ------------------------------------------------------------------
   // Toasts
   // ------------------------------------------------------------------
@@ -1357,7 +1383,19 @@
       dialog.style.top = '';
       dialog.style.margin = '';
     }
+    applySnipMgrFont();
     el('snipManagerModal').classList.remove('hidden');
+  }
+
+  // Open the editable snippets.json in the OS default editor for hand-editing.
+  async function openSnippetsFile() {
+    if (!api.openSnippetsFile) return;
+    try {
+      const res = await api.openSnippetsFile();
+      if (res && res.ok === false) toast(t('snip.manage.openFileErr'), 'error');
+    } catch (_e) {
+      toast(t('snip.manage.openFileErr'), 'error');
+    }
   }
 
   // Close the manager, optionally discarding staged (unsaved) edits.
@@ -1418,7 +1456,7 @@
   // Make a modal dialog draggable by a handle (e.g. its header).
   function makeModalDraggable(dialog, handle) {
     handle.addEventListener('mousedown', (e) => {
-      if (e.target.closest && e.target.closest('.btn-remove')) return;
+      if (e.target.closest && e.target.closest('.modal-head-tools')) return;
       const rect = dialog.getBoundingClientRect();
       dialog.style.position = 'absolute';
       dialog.style.margin = '0';
@@ -1447,8 +1485,23 @@
     el('btnSnipManagerClose').addEventListener('click', () => closeSnipManager(false));
     el('btnSnipCancel').addEventListener('click', () => closeSnipManager(false));
     el('btnSnipSave').addEventListener('click', saveSnipManager);
+    el('btnSnipOpenFile').addEventListener('click', openSnippetsFile);
+    el('btnSnipFontDown').addEventListener('click', () => bumpSnipMgrFont(-1));
+    el('btnSnipFontUp').addEventListener('click', () => bumpSnipMgrFont(1));
+    el('btnSnipFontReset').addEventListener('click', () => setSnipMgrFont(SNIP_FONT_DEFAULT));
+    applySnipMgrFont();
     modal.addEventListener('click', (e) => {
       if (e.target === modal) closeSnipManager(false);
+    });
+
+    // Esc closes the manager while it is open (even from a focused snippet
+    // field). Registered before the palette Esc handler and stops propagation
+    // so only the dialog closes, not any floating panel behind the overlay.
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || modal.classList.contains('hidden')) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      closeSnipManager(false);
     });
 
     const dialog = modal.querySelector('.modal');

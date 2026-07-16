@@ -109,6 +109,12 @@
   "snip.manage.unsaved": "Unsaved changes",
   "snip.manage.discardConfirm": "Discard unsaved changes?",
   "snip.manage.delItem": "Delete snippet",
+  "snip.manage.openFile": "JSON",
+  "snip.manage.openFile.title": "Open snippets.json in the default editor",
+  "snip.manage.openFileErr": "Could not open snippets.json.",
+  "snip.manage.fontDown.title": "Shrink text",
+  "snip.manage.fontReset.title": "Reset text size",
+  "snip.manage.fontUp.title": "Enlarge text",
   "toast.summaryOk": "Project summary copied.",
   "toast.dupName": "Tab name must be unique.",
   "toast.reset": "Fields reset to default."

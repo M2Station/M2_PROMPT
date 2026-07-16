@@ -268,7 +268,21 @@
       <div class="modal modal-wide">
         <div class="modal-head">
           <h2 data-i18n="snip.manage.title">SNIPPET 設定</h2>
-          <button class="btn-remove" id="btnSnipManagerClose" title="Close">&times;</button>
+          <div class="modal-head-tools">
+            <button type="button" class="btn btn-ghost btn-sm" id="btnSnipOpenFile" data-i18n-title="snip.manage.openFile.title" title="以預設編輯器開啟 snippets.json">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+              </svg>
+              <span data-i18n="snip.manage.openFile">JSON</span>
+            </button>
+            <div class="snip-font-ctrl" role="group">
+              <button type="button" id="btnSnipFontDown" data-i18n-title="snip.manage.fontDown.title" title="縮小字體">A-</button>
+              <button type="button" id="btnSnipFontReset" data-i18n-title="snip.manage.fontReset.title" title="還原字體大小">A</button>
+              <button type="button" id="btnSnipFontUp" data-i18n-title="snip.manage.fontUp.title" title="放大字體">A+</button>
+            </div>
+            <button class="btn-remove" id="btnSnipManagerClose" title="Close">&times;</button>
+          </div>
         </div>
         <div class="modal-body">
           <div class="field">

@@ -24,5 +24,6 @@ contextBridge.exposeInMainWorld('m2prompt', {
   saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
   loadSnippets: () => ipcRenderer.invoke('snippets:load'),
   saveSnippets: (data) => ipcRenderer.invoke('snippets:save', data),
+  openSnippetsFile: () => ipcRenderer.invoke('snippets:openFile'),
   loadI18n: (lang) => ipcRenderer.invoke('i18n:load', lang),
 });

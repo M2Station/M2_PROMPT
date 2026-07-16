@@ -109,6 +109,12 @@
   "snip.manage.unsaved": "未儲存的變更",
   "snip.manage.discardConfirm": "有未儲存的變更，確定要放棄？",
   "snip.manage.delItem": "删除片語",
+  "snip.manage.openFile": "JSON",
+  "snip.manage.openFile.title": "以預設編輯器開啟 snippets.json",
+  "snip.manage.openFileErr": "無法開啟 snippets.json。",
+  "snip.manage.fontDown.title": "縮小字體",
+  "snip.manage.fontReset.title": "還原字體大小",
+  "snip.manage.fontUp.title": "放大字體",
   "toast.summaryOk": "已複製專案摘要。",
   "toast.dupName": "分頁名稱不能重複。",
   "toast.reset": "已還原預設欄位。"
