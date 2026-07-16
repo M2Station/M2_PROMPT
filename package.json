@@ -1,0 +1,59 @@
+{
+  "name": "m2-prompt-tool",
+  "version": "0.1.0",
+  "description": "Fast prompt authoring, tracking and management - Electron desktop app",
+  "author": "OA Hsiao",
+  "license": "MIT",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win --x64 --arm64",
+    "dist:x64": "electron-builder --win --x64",
+    "dist:arm64": "electron-builder --win --arm64"
+  },
+  "build": {
+    "appId": "com.m2station.m2prompt",
+    "productName": "M2_PROMPT",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "M2 PROMPT"
+    }
+  },
+  "keywords": [
+    "prompt",
+    "ai",
+    "llm",
+    "tool",
+    "electron"
+  ],
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^43.1.0",
+    "electron-builder": "^24.13.3"
+  }
+}

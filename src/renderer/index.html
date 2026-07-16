@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<!--
+  M2_PROMPT
+  Copyright (c) 2026 OA Hsiao
+  SPDX-License-Identifier: MIT
+-->
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';"
+    />
+    <title>M2 PROMPT</title>
+    <link rel="stylesheet" href="css/styles.css" />
+    <script src="js/themes.js"></script>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23facc15'%3E%3Cpath d='M12 2l2.4 6.9L21 11l-6.6 2.1L12 20l-2.4-6.9L3 11l6.6-2.1z'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div class="app">
+      <!-- Header -->
+      <header class="topbar">
+        <div class="brand">
+          <div class="logo">
+            <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" aria-hidden="true">
+              <path d="M12 2l2.4 6.9L21 11l-6.6 2.1L12 20l-2.4-6.9L3 11l6.6-2.1z" />
+            </svg>
+          </div>
+          <div class="brand-text">
+            <h1>M2 PROMPT <span class="app-version" id="appVersion"></span></h1>
+            <span data-i18n="brand.subtitle">Prompt 工具集 · Toolbox</span>
+          </div>
+        </div>
+
+        <!-- Top-level feature tabs -->
+        <nav class="feature-tabs" id="featureTabs">
+          <button class="feature-tab active" data-view="output">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            <span data-i18n="tab.output">PROMPT_OUTPUT</span>
+          </button>
+          <button class="feature-tab" data-view="library">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+            </svg>
+            <span data-i18n="tab.library">PROMPT 管理</span>
+          </button>
+        </nav>
+
+        <div class="topbar-actions">
+          <button class="btn btn-ghost btn-icon" id="btnSettings" data-i18n-title="settings.title" title="設定">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+          <button class="btn btn-ghost btn-lang" id="btnLang" title="切換語言 / Switch language">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="2" y1="12" x2="22" y2="12" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+            <span id="langLabel">EN</span>
+          </button>
+          <button class="btn btn-ghost" id="btnOpenExplorer" data-i18n-title="btn.explorer.title" title="開啟輸出資料夾">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span data-i18n="btn.explorer">檔案總管</span>
+          </button>
+          <a class="app-credit" id="appCredit" href="https://github.com/oahsiao" rel="noopener noreferrer" data-i18n-title="credit.title" title="github.com/oahsiao">
+            <svg class="gh-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z" stroke="none" fill-rule="evenodd" /></svg>
+            <span class="credit-by" data-i18n="credit.by">Powered by</span>
+            <span class="credit-name">OA Hsiao</span>
+          </a>
+        </div>
+      </header>
+
+      <!-- ===================== PROMPT_OUTPUT view ===================== -->
+      <div class="feature-view active" id="view-output">
+        <!-- Project tabs: each tab is a whole project (fields + prompt sections) -->
+        <nav class="exp-tabs" id="projTabs"></nav>
+
+        <main class="layout">
+          <!-- Left: project fields -->
+          <section class="panel panel-form">
+            <div class="panel-head">
+              <h2 data-i18n="panel.projFields">專案欄位</h2>
+              <div class="panel-head-right">
+                <span class="hint" data-i18n="panel.projFields.hint">Project Info</span>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnNextProj" data-i18n-title="btn.nextProj.title" title="清空專案名稱與 Prompt（還原預設），其餘欄位沿用">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="13 17 18 12 13 7" />
+                    <polyline points="6 17 11 12 6 7" />
+                  </svg>
+                  <span data-i18n="btn.nextProj">下一個專案</span>
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnResetFields" data-i18n-title="btn.resetFields.title" title="把專案欄位還原成預設值">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10" />
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                  </svg>
+                  <span data-i18n="btn.resetFields">還原預設</span>
+                </button>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnCopySummary" data-i18n-title="btn.copySummary.title" title="把專案欄位以文字格式複製到剪貼簿">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                  </svg>
+                  <span data-i18n="btn.copySummary">COPY SUMMARY</span>
+                </button>
+              </div>
+            </div>
+            <div class="panel-body">
+              <div class="field">
+                <label for="projectName"><span data-i18n="field.projName">專案名稱</span> <span class="req">*</span> <span class="opt" data-i18n="field.projName.opt">中英文皆可</span></label>
+                <input id="projectName" type="text" data-i18n-ph="field.projName.ph" placeholder="e.g. Customer Support Bot" autocomplete="off" />
+                <small><span data-i18n="field.projName.note">輸出資料夾：</span><code id="folderPreview">YYYYMMDD_HHmm_ABBREVIATE</code><button type="button" class="btn-clock" id="btnRefreshTime" data-i18n-title="btn.refreshTime.title" title="更新為目前日期與時間"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg></button></small>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="date" data-i18n="field.date">日期</label>
+                  <input id="date" type="date" />
+                </div>
+                <div class="field">
+                  <label for="author" data-i18n="field.author">作者</label>
+                  <input id="author" type="text" data-i18n-ph="field.author.ph" placeholder="作者 / 團隊" autocomplete="off" />
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="category" data-i18n="field.category">分類</label>
+                  <input id="category" type="text" data-i18n-ph="field.category.ph" placeholder="e.g. Chatbot / Agent" autocomplete="off" />
+                </div>
+                <div class="field">
+                  <label for="model" data-i18n="field.model">目標模型</label>
+                  <input id="model" type="text" data-i18n-ph="field.model.ph" placeholder="e.g. GPT-4o" autocomplete="off" />
+                </div>
+              </div>
+
+              <div class="field">
+                <label for="notes" data-i18n="field.notes">備註</label>
+                <textarea id="notes" rows="3" data-i18n-ph="field.notes.ph" placeholder="備註..."></textarea>
+              </div>
+
+              <!-- Custom fields -->
+              <div class="field">
+                <div class="custom-head">
+                  <label><span data-i18n="custom.title">自訂欄位</span> <span class="opt" data-i18n="custom.opt">Custom Fields</span></label>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btnAddField" data-i18n="btn.addField">+ 新增欄位</button>
+                </div>
+                <div id="customFields" class="custom-list"></div>
+              </div>
+
+              <div class="field">
+                <label for="outputBase"><span data-i18n="field.outputBase">輸出根目錄</span> <span class="opt" data-i18n="field.outputBase.opt">(選填)</span></label>
+                <div style="display:flex; gap:8px; align-items:stretch;">
+                  <input id="outputBase" type="text" data-i18n-ph="field.outputBase.ph" placeholder="留空 = 專案內 PROMPT_OUTPUT/" autocomplete="off" style="flex:1;" />
+                  <button type="button" class="btn btn-ghost btn-sm" id="btnOpenBase" data-i18n-title="btn.openBase.title" title="開啟輸出根目錄">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <span data-i18n="btn.openBase">開啟</span>
+                  </button>
+                  <button type="button" class="btn btn-ghost btn-sm" id="btnBrowseBase" data-i18n="btn.browse">Browse...</button>
+                </div>
+                <small data-i18n="field.outputBase.note">可填絕對路徑，例如 D:\Prompts</small>
+              </div>
+            </div>
+          </section>
+
+          <!-- Draggable splitter -->
+          <div class="splitter" id="splitter" data-i18n-title="splitter.title" title="拖曳調整左右寬度"></div>
+
+          <!-- Right: prompt input (dynamic function tabs) -->
+          <section class="panel panel-log">
+            <div class="panel-head">
+              <div class="tabs" id="sectionTabs"></div>
+              <div class="log-tools">
+                <span class="counter" id="counter">0 行 · 0 字元</span>
+                <button class="btn btn-ghost btn-sm" id="btnExportSingle" data-i18n-title="btn.exportSingle.title" title="只輸出目前這個分頁">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span data-i18n="btn.exportSingle">輸出此分頁</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" id="btnClearLogs" data-i18n-title="btn.clear.title" data-i18n="btn.clear" title="清空目前分頁">清除</button>
+              </div>
+            </div>
+            <div class="panel-body log-body" id="sectionBody"></div>
+          </section>
+        </main>
+
+        <!-- Action bar -->
+        <footer class="actionbar">
+          <div class="action-left">
+            <span class="kbd-hint"><span data-i18n="kbd.pre">提示：</span><kbd>Ctrl</kbd> + <kbd>Enter</kbd><span data-i18n="kbd.post"> 快速輸出</span></span>
+          </div>
+          <div class="action-right">
+            <button class="btn btn-primary" id="btnExport">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span data-i18n="btn.export">輸出</span>
+            </button>
+          </div>
+        </footer>
+
+        <!-- Result -->
+        <section class="result hidden" id="result"></section>
+      </div>
+      <!-- ===================== /PROMPT_OUTPUT view ===================== -->
+
+      <!-- ===================== PROMPT Library view ===================== -->
+      <div class="feature-view" id="view-library">
+        <div class="analysis">
+          <div class="analysis-toolbar">
+            <button class="btn btn-ghost btn-sm" id="btnLibRefresh" data-i18n="lib.refresh">重新整理</button>
+            <button class="btn btn-ghost btn-sm" id="btnLibOpen" data-i18n="lib.open">開啟資料夾</button>
+            <code class="ana-path" id="libPath"></code>
+          </div>
+          <div class="analysis-body">
+            <aside class="panel ana-tree-panel">
+              <div class="panel-head">
+                <h2 data-i18n="lib.files">已輸出的 Prompt</h2>
+                <span class="hint" id="libCount"></span>
+              </div>
+              <div class="ana-filter">
+                <svg class="ana-filter-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input type="text" id="libFilter" class="ana-filter-input" data-i18n-ph="lib.filter.ph" placeholder="Type to filter…" spellcheck="false" autocomplete="off" />
+              </div>
+              <div class="panel-body ana-tree" id="libTree"></div>
+            </aside>
+            <div class="splitter" id="libSplitter" data-i18n-title="splitter.title" title="拖曳調整左右寬度"></div>
+            <section class="panel ana-view-panel">
+              <div class="panel-head">
+                <h2 id="libViewName" data-i18n="lib.viewer">檢視</h2>
+                <div class="log-tools">
+                  <span class="counter" id="libViewMeta"></span>
+                  <button class="btn btn-ghost btn-sm" id="btnLibOpenThis" data-i18n="lib.openThis" disabled>開啟此資料夾</button>
+                  <button class="btn btn-ghost btn-sm" id="btnLibCopy" data-i18n="lib.copy" disabled>複製</button>
+                </div>
+              </div>
+              <div class="panel-body ana-view">
+                <div class="ana-scroll" id="libScroll" tabindex="-1">
+                  <div class="ana-code" id="libViewContent"><span class="ana-hint" data-i18n="lib.pick.hint">從左側選擇一個 Prompt 來檢視。</span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+      <!-- ===================== /PROMPT Library view ===================== -->
+    </div>
+
+    <!-- Toasts -->
+    <div class="toasts" id="toasts"></div>
+
+    <!-- Settings modal -->
+    <div class="modal-overlay hidden" id="settingsModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h2 data-i18n="settings.title">設定</h2>
+          <button class="btn-remove" id="btnSettingsClose" title="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label for="setTheme"><span data-i18n="settings.theme">主題</span> <span class="opt" data-i18n="settings.theme.opt">Theme</span></label>
+            <select id="setTheme" class="select-theme"></select>
+            <small data-i18n="settings.theme.note">切換整體介面配色主題。</small>
+          </div>
+          <div class="field">
+            <label for="setAbbrevLen"><span data-i18n="settings.folderLen">資料夾名稱長度</span> <span class="opt" data-i18n="settings.folderLen.opt">(1–40)</span></label>
+            <input id="setAbbrevLen" type="number" min="1" max="40" step="1" />
+            <small data-i18n="settings.folderLen.note">專案名稱縮寫的最大長度。</small>
+            <small><span data-i18n="settings.preview">預覽：</span><code id="setPreview"></code></small>
+          </div>
+          <div class="field">
+            <label for="setTypeLen"><span data-i18n="settings.typeLen">分頁名稱長度</span> <span class="opt" data-i18n="settings.typeLen.opt">(1–100)</span></label>
+            <input id="setTypeLen" type="number" min="1" max="100" step="1" />
+            <small data-i18n="settings.typeLen.note">分頁（檔名／子資料夾）的最大長度。</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="js/app.js"></script>
+  </body>
+</html>

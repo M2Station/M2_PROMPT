@@ -1,0 +1,68 @@
+/*
+ * M2_PROMPT
+ * Copyright (c) 2026 OA Hsiao
+ * SPDX-License-Identifier: MIT
+ *
+ * This source code is licensed under the MIT License found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+'use strict';
+
+const path = require('path');
+const fs = require('fs');
+const { app, BrowserWindow, Menu } = require('electron');
+const { registerIpc } = require('./ipc');
+
+let mainWindow = null;
+
+// Background color shown the instant the window appears (before the renderer
+// paints). Cached from the user's last theme so dark-theme users don't get a
+// white flash. Falls back to the default "Daylight" light background.
+function startupBackground() {
+  try {
+    const p = path.join(app.getPath('userData'), 'startup.json');
+    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+    if (j && typeof j.bg === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(j.bg)) return j.bg;
+  } catch (e) {
+    /* no cache yet - use default */
+  }
+  return '#f4f4f4';
+}
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1180,
+    height: 800,
+    minWidth: 900,
+    minHeight: 600,
+    show: true,
+    backgroundColor: startupBackground(),
+    title: 'M2 PROMPT v' + app.getVersion(),
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+
+  mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+}
+
+app.whenReady().then(() => {
+  if (process.platform === 'win32') app.setAppUserModelId('com.m2station.m2prompt');
+  Menu.setApplicationMenu(null);
+  registerIpc();
+  createWindow();
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
