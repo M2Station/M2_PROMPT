@@ -505,6 +505,36 @@ body.col-resizing {
   display: block;
 }
 
+small.folder-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.prefix-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+}
+
+.prefix-toggle input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.prefix-colon {
+  color: var(--text-faint);
+}
+
 .custom-empty {
   font-size: 11.5px;
   color: var(--text-faint);
@@ -586,6 +616,142 @@ input[type="date"] {
   background: var(--surface-2);
   color: var(--text);
   box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.tab.dirty .tab-name {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+/* ---------- Snippet palettes ---------- */
+.snip-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  background: var(--tabbar-bg);
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.snip-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 12.5px;
+  font-weight: 700;
+  font-family: inherit;
+  letter-spacing: 0.4px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.snip-cat:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.snip-cat.active {
+  color: var(--tab-active-text);
+  background: var(--tab-active);
+  border-color: transparent;
+  box-shadow: 0 1px 5px color-mix(in srgb, var(--tab-active) 45%, transparent);
+}
+
+.snip-panel {
+  position: fixed;
+  z-index: 800;
+  width: 240px;
+  height: 260px;
+  min-width: 170px;
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+  overflow: hidden;
+  resize: both;
+}
+
+.snip-panel.dragging {
+  opacity: 0.97;
+}
+
+.snip-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: move;
+  user-select: none;
+  background: var(--tabbar-bg);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.snip-close {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.snip-close:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+}
+
+.snip-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+}
+
+.snip-item {
+  flex: 0 0 auto;
+  max-width: 100%;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-family: inherit;
+  color: var(--btn-text);
+  background: var(--btn-bg);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.snip-item:hover {
+  color: var(--tab-active-text);
+  background: var(--tab-active);
+  border-color: transparent;
 }
 
 .dot {

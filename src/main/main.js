@@ -36,6 +36,7 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     show: true,
+    autoHideMenuBar: true,
     backgroundColor: startupBackground(),
     title: 'M2 PROMPT v' + app.getVersion(),
     icon: path.join(__dirname, '..', 'assets', 'icon.png'),
@@ -46,15 +47,37 @@ function createWindow() {
     },
   });
 
+  mainWindow.setMenuBarVisibility(false);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
 }
 
+// A minimal, hidden application menu whose roles register the standard editing
+// accelerators (Ctrl+Z / Ctrl+Y undo-redo, cut / copy / paste, select-all) so
+// they work inside text fields. Without any menu these shortcuts are dead.
+function applyEditMenu() {
+  const template = [
+    {
+      label: '&Edit',
+      submenu: [
+        { role: 'undo' },
+        { role: 'redo' },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
 app.whenReady().then(() => {
   if (process.platform === 'win32') app.setAppUserModelId('com.m2station.m2prompt');
-  Menu.setApplicationMenu(null);
+  applyEditMenu();
   registerIpc();
   createWindow();
 

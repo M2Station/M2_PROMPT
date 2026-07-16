@@ -23,6 +23,12 @@
       "src/**/*",
       "package.json"
     ],
+    "extraFiles": [
+      {
+        "from": "snippets.json",
+        "to": "snippets.json"
+      }
+    ],
     "win": {
       "target": [
         {

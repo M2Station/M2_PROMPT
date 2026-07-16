@@ -45,6 +45,13 @@
         </nav>
 
         <div class="topbar-actions">
+          <button class="btn btn-ghost" id="btnOpenProject" data-i18n-title="btn.openProject.title" title="開啟專案">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 7a2 2 0 0 1 2-2h4l2 3h6a2 2 0 0 1 2 2" />
+              <path d="M3 7v10a2 2 0 0 0 2 2h13a2 2 0 0 0 1.94-1.5L22 11H6.2a2 2 0 0 0-1.94 1.5L3 17" />
+            </svg>
+            <span data-i18n="btn.openProject">開啟專案</span>
+          </button>
           <button class="btn btn-ghost btn-icon" id="btnSettings" data-i18n-title="settings.title" title="設定">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="12" cy="12" r="3" />
@@ -78,6 +85,10 @@
         <!-- Project tabs: each tab is a whole project (fields + prompt sections) -->
         <nav class="exp-tabs" id="projTabs"></nav>
 
+        <!-- Snippet toolbar: each button opens a floating, draggable panel of
+             commonly-used prompt / keyword buttons. -->
+        <nav class="snip-bar" id="snipBar"></nav>
+
         <main class="layout">
           <!-- Left: project fields -->
           <section class="panel panel-form">
@@ -85,13 +96,6 @@
               <h2 data-i18n="panel.projFields">專案欄位</h2>
               <div class="panel-head-right">
                 <span class="hint" data-i18n="panel.projFields.hint">Project Info</span>
-                <button type="button" class="btn btn-ghost btn-sm" id="btnNextProj" data-i18n-title="btn.nextProj.title" title="清空專案名稱與 Prompt（還原預設），其餘欄位沿用">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="13 17 18 12 13 7" />
-                    <polyline points="6 17 11 12 6 7" />
-                  </svg>
-                  <span data-i18n="btn.nextProj">下一個專案</span>
-                </button>
                 <button type="button" class="btn btn-ghost btn-sm" id="btnResetFields" data-i18n-title="btn.resetFields.title" title="把專案欄位還原成預設值">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="1 4 1 10 7 10" />
@@ -112,24 +116,13 @@
               <div class="field">
                 <label for="projectName"><span data-i18n="field.projName">專案名稱</span> <span class="req">*</span> <span class="opt" data-i18n="field.projName.opt">中英文皆可</span></label>
                 <input id="projectName" type="text" data-i18n-ph="field.projName.ph" placeholder="e.g. Customer Support Bot" autocomplete="off" />
-                <small><span data-i18n="field.projName.note">輸出資料夾：</span><code id="folderPreview">YYYYMMDD_HHmm_ABBREVIATE</code><button type="button" class="btn-clock" id="btnRefreshTime" data-i18n-title="btn.refreshTime.title" title="更新為目前日期與時間"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg></button></small>
+                <small class="folder-line"><label class="prefix-toggle" data-i18n-title="field.prefix.title" title="勾選才會在資料夾名稱前加上日期與時間"><span data-i18n="field.prefix">PRE_FIX</span><input type="checkbox" id="usePrefix" /></label><span class="prefix-colon">：</span><code id="folderPreview">YYYYMMDD_HHmm_ABBREVIATE</code><button type="button" class="btn-clock" id="btnRefreshTime" data-i18n-title="btn.refreshTime.title" title="更新為目前日期與時間"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></svg></button></small>
               </div>
 
               <div class="field-row">
                 <div class="field">
                   <label for="date" data-i18n="field.date">日期</label>
                   <input id="date" type="date" />
-                </div>
-                <div class="field">
-                  <label for="author" data-i18n="field.author">作者</label>
-                  <input id="author" type="text" data-i18n-ph="field.author.ph" placeholder="作者 / 團隊" autocomplete="off" />
-                </div>
-              </div>
-
-              <div class="field-row">
-                <div class="field">
-                  <label for="category" data-i18n="field.category">分類</label>
-                  <input id="category" type="text" data-i18n-ph="field.category.ph" placeholder="e.g. Chatbot / Agent" autocomplete="off" />
                 </div>
                 <div class="field">
                   <label for="model" data-i18n="field.model">目標模型</label>
@@ -204,6 +197,14 @@
             <span class="kbd-hint"><span data-i18n="kbd.pre">提示：</span><kbd>Ctrl</kbd> + <kbd>Enter</kbd><span data-i18n="kbd.post"> 快速輸出</span></span>
           </div>
           <div class="action-right">
+            <button class="btn btn-ghost" id="btnSave" style="display:none;">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              <span data-i18n="btn.save">儲存</span>
+            </button>
             <button class="btn btn-primary" id="btnExport">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />

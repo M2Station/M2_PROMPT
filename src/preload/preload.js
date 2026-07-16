@@ -19,5 +19,8 @@ contextBridge.exposeInMainWorld('m2prompt', {
   openFolder: (targetPath) => ipcRenderer.invoke('prompt:openFolder', targetPath),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pickFolder', defaultPath),
+  openProject: () => ipcRenderer.invoke('project:open'),
+  saveProject: (payload) => ipcRenderer.invoke('project:save', payload),
+  loadSnippets: () => ipcRenderer.invoke('snippets:load'),
   loadI18n: (lang) => ipcRenderer.invoke('i18n:load', lang),
 });

@@ -36,12 +36,9 @@
       fields: {
         projectName: '',
         date: todayStr(),
-        author: '',
-        category: '',
         model: '',
         notes: '',
         customFields: [],
-        outputBase: '',
       },
       sections: DEFAULT_SECTIONS.map((n) => newSection(n)),
       activeSectionId: null,
@@ -56,6 +53,8 @@
       abbrevLen: 30,
       typeLen: 60,
       leftWidth: 380,
+      usePrefix: false,
+      outputBase: '',
       projects: [p],
       activeProjectId: p.id,
     };
@@ -82,6 +81,7 @@
     } catch (_e) {
       /* ignore */
     }
+    updateSaveButton();
   }
 
   function activeProject() {
@@ -91,6 +91,48 @@
   function activeSection(proj) {
     const p = proj || activeProject();
     return p.sections.find((s) => s.id === p.activeSectionId) || p.sections[0];
+  }
+
+  // Serialize a project's savable content, to detect unsaved edits after Open.
+  function projectSignature(p) {
+    const f = p.fields || {};
+    return JSON.stringify({
+      projectName: f.projectName || '',
+      date: f.date || '',
+      model: f.model || '',
+      notes: f.notes || '',
+      customFields: f.customFields || [],
+      sections: (p.sections || []).map((s) => ({ name: s.name, content: s.content })),
+    });
+  }
+
+  // Show the SAVE button only for a project opened from disk with unsaved edits.
+  function updateSaveButton() {
+    const btn = document.getElementById('btnSave');
+    if (!btn) return;
+    const p = activeProject();
+    const dirty = !!(p && p.sourcePath && projectSignature(p) !== p.savedSig);
+    btn.style.display = dirty ? '' : 'none';
+  }
+
+  // A section (tab) is "dirty" when its content or name differs from the version
+  // last opened/saved from disk. Only meaningful for projects opened from disk.
+  function sectionDirty(p, s) {
+    if (!p || !p.sourcePath) return false;
+    return s.content !== s.savedContent || s.name !== s.savedName;
+  }
+
+  // Toggle the red "modified" style on each section tab in place (no rebuild).
+  function refreshSectionTabDirty() {
+    const p = activeProject();
+    const tabs = document.getElementById('sectionTabs');
+    if (!tabs) return;
+    tabs.querySelectorAll('.tab').forEach((b) => {
+      const sid = b.dataset.sid;
+      if (!sid) return;
+      const s = p.sections.find((x) => x.id === sid);
+      b.classList.toggle('dirty', !!(s && sectionDirty(p, s)));
+    });
   }
 
   // ------------------------------------------------------------------
@@ -156,10 +198,11 @@
   }
 
   function folderPreview() {
+    const abbr = abbreviate(activeProject().fields.projectName, state.abbrevLen);
+    if (!state.usePrefix) return abbr;
     const d = new Date();
     const date = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
     const time = `${pad(d.getHours())}${pad(d.getMinutes())}`;
-    const abbr = abbreviate(activeProject().fields.projectName, state.abbrevLen);
     return `${date}_${time}_${abbr}`;
   }
 
@@ -246,11 +289,10 @@
     const f = activeProject().fields;
     el('projectName').value = f.projectName || '';
     el('date').value = f.date || '';
-    el('author').value = f.author || '';
-    el('category').value = f.category || '';
     el('model').value = f.model || '';
     el('notes').value = f.notes || '';
-    el('outputBase').value = f.outputBase || '';
+    el('outputBase').value = state.outputBase || '';
+    el('usePrefix').checked = state.usePrefix === true;
     el('folderPreview').textContent = folderPreview();
     renderCustomFields();
   }
@@ -400,6 +442,7 @@
       renderSection();
     });
     tabs.appendChild(add);
+    refreshSectionTabDirty();
   }
 
   // Inline tab rename (Electron's renderer has no window.prompt). Swaps the
@@ -483,6 +526,7 @@
       s.content = ta.value;
       el('counter').textContent = counterText(ta.value);
       saveState();
+      refreshSectionTabDirty();
     });
     ta.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -503,11 +547,8 @@
     const map = {
       projectName: 'projectName',
       date: 'date',
-      author: 'author',
-      category: 'category',
       model: 'model',
       notes: 'notes',
-      outputBase: 'outputBase',
     };
     Object.keys(map).forEach((id) => {
       el(id).addEventListener('input', () => {
@@ -527,6 +568,17 @@
       saveState();
     });
 
+    el('outputBase').addEventListener('input', () => {
+      state.outputBase = el('outputBase').value;
+      saveState();
+    });
+
+    el('usePrefix').addEventListener('change', () => {
+      state.usePrefix = el('usePrefix').checked;
+      el('folderPreview').textContent = folderPreview();
+      saveState();
+    });
+
     el('btnAddField').addEventListener('click', () => {
       activeProject().fields.customFields.push({ key: '', value: '' });
       saveState();
@@ -538,12 +590,9 @@
       p.fields = {
         projectName: '',
         date: todayStr(),
-        author: '',
-        category: '',
         model: '',
         notes: '',
         customFields: [],
-        outputBase: '',
       };
       saveState();
       renderFields();
@@ -551,25 +600,11 @@
       toast(t('toast.reset'), 'info');
     });
 
-    el('btnNextProj').addEventListener('click', () => {
-      const p = activeProject();
-      p.fields.projectName = '';
-      p.sections = DEFAULT_SECTIONS.map((n) => newSection(n));
-      p.activeSectionId = p.sections[0].id;
-      saveState();
-      renderFields();
-      renderProjectTabs();
-      renderSection();
-      toast(t('toast.nextProj'), 'info');
-    });
-
     el('btnCopySummary').addEventListener('click', async () => {
       const f = activeProject().fields;
       const lines = [
         `Project : ${f.projectName || ''}`,
         `Date    : ${f.date || ''}`,
-        `Author  : ${f.author || ''}`,
-        `Category: ${f.category || ''}`,
         `Model   : ${f.model || ''}`,
         `Notes   : ${f.notes || ''}`,
       ];
@@ -602,12 +637,11 @@
     return {
       projectName: p.fields.projectName,
       date: p.fields.date,
-      author: p.fields.author,
-      category: p.fields.category,
       model: p.fields.model,
       notes: p.fields.notes,
       customFields: p.fields.customFields,
-      outputBase: p.fields.outputBase,
+      outputBase: state.outputBase,
+      usePrefix: state.usePrefix === true,
       abbrevLen: state.abbrevLen,
       typeLen: state.typeLen,
       sections: p.sections.map((s) => ({ name: s.name, content: s.content })),
@@ -656,6 +690,34 @@
     }
   }
 
+  async function doSave() {
+    const p = activeProject();
+    if (!p.sourcePath) return;
+    const btn = el('btnSave');
+    btn.classList.add('loading');
+    try {
+      const payload = exportPayload();
+      payload.sourcePath = p.sourcePath;
+      const res = await api.saveProject(payload);
+      if (res && res.ok) {
+        p.sections.forEach((s) => {
+          s.savedContent = s.content;
+          s.savedName = s.name;
+        });
+        p.savedSig = projectSignature(p);
+        saveState();
+        refreshSectionTabDirty();
+        toast(t('toast.saveOk'), 'success');
+      } else {
+        toast(t('toast.saveErr') + (res ? res.error : ''), 'error');
+      }
+    } catch (e) {
+      toast(t('toast.saveErr') + e.message, 'error');
+    } finally {
+      btn.classList.remove('loading');
+    }
+  }
+
   function showResult(res) {
     const box = el('result');
     box.classList.remove('hidden');
@@ -687,6 +749,57 @@
   }
 
   // ------------------------------------------------------------------
+  // Open an exported project folder for editing
+  // ------------------------------------------------------------------
+  async function openProjectFolder() {
+    let res;
+    try {
+      res = await api.openProject();
+    } catch (e) {
+      toast(t('toast.openErr') + e.message, 'error');
+      return;
+    }
+    if (!res || res.canceled) return;
+    if (!res.ok) {
+      toast(t('toast.openErr') + (res.error || ''), 'error');
+      return;
+    }
+    const d = res.project || {};
+    if (!Array.isArray(d.sections) || !d.sections.length) {
+      toast(t('toast.openEmpty'), 'error');
+      return;
+    }
+
+    const proj = newProject();
+    proj.fields.projectName = d.projectName || '';
+    proj.fields.date = d.date || todayStr();
+    proj.fields.model = d.model || '';
+    proj.fields.notes = d.notes || '';
+    proj.fields.customFields = Array.isArray(d.customFields)
+      ? d.customFields.map((c) => ({ key: c.key || '', value: c.value || '' }))
+      : [];
+
+    proj.sections = [];
+    d.sections.forEach((s) => {
+      const nm = uniqueSectionName(proj, s.name || 'Prompt');
+      const ns = newSection(nm);
+      ns.content = s.content || '';
+      ns.savedContent = ns.content;
+      ns.savedName = nm;
+      proj.sections.push(ns);
+    });
+    proj.activeSectionId = proj.sections[0].id;
+    proj.sourcePath = d.sourcePath || '';
+    proj.savedSig = projectSignature(proj);
+
+    state.projects.push(proj);
+    state.activeProjectId = proj.id;
+    saveState();
+    renderAll();
+    toast(t('toast.openOk'), 'success');
+  }
+
+  // ------------------------------------------------------------------
   // Feature view switching
   // ------------------------------------------------------------------
   function wireViews() {
@@ -701,19 +814,21 @@
 
     el('btnExport').addEventListener('click', doExport);
     el('btnExportSingle').addEventListener('click', doExportSingle);
+    el('btnSave').addEventListener('click', doSave);
     el('btnOpenExplorer').addEventListener('click', () => api.openFolder(''));
+    el('btnOpenProject').addEventListener('click', openProjectFolder);
     el('btnOpenFolder').addEventListener('click', () => {
-      const base = (activeProject().fields.outputBase || '').trim();
+      const base = (state.outputBase || '').trim();
       api.openFolder(base);
     });
     el('btnOpenBase').addEventListener('click', () => {
-      const base = (activeProject().fields.outputBase || '').trim();
+      const base = (state.outputBase || '').trim();
       api.openFolder(base);
     });
     el('btnBrowseBase').addEventListener('click', async () => {
-      const picked = await api.pickFolder(activeProject().fields.outputBase);
+      const picked = await api.pickFolder(state.outputBase);
       if (picked) {
-        activeProject().fields.outputBase = picked;
+        state.outputBase = picked;
         el('outputBase').value = picked;
         saveState();
       }
@@ -821,6 +936,166 @@
     renderProjectTabs();
     renderFields();
     renderSection();
+    updateSaveButton();
+  }
+
+  // ------------------------------------------------------------------
+  // Snippet palettes (floating, draggable, resizable panels of quick inserts)
+  // ------------------------------------------------------------------
+  let SNIPPETS = {};
+
+  function buildSnipBar() {
+    const bar = el('snipBar');
+    if (!bar) return;
+    bar.innerHTML = '';
+    Object.keys(SNIPPETS).forEach((cat) => {
+      const cfg = SNIPPETS[cat] || {};
+      const btn = document.createElement('button');
+      btn.className = 'snip-cat';
+      btn.dataset.cat = cat;
+      btn.textContent = cfg.label || cat;
+      btn.addEventListener('click', () => toggleSnipPanel(cat));
+      bar.appendChild(btn);
+    });
+  }
+
+  function setCatActive(cat, on) {
+    const btn = document.querySelector(`.snip-cat[data-cat="${cat}"]`);
+    if (btn) btn.classList.toggle('active', on);
+  }
+
+  // Insert text into the active prompt editor at the cursor position.
+  function insertSnippet(text) {
+    const ta = el('sectionBody') && el('sectionBody').querySelector('.log-input');
+    if (!ta) {
+      toast(t('snip.noEditor'), 'error');
+      return;
+    }
+    ta.focus();
+    // Insert via execCommand so the change joins the textarea's native undo
+    // stack (Ctrl+Z undoes an inserted snippet just like typed text). The
+    // resulting 'input' event syncs content / counter / dirty state.
+    let inserted = false;
+    try {
+      inserted = document.execCommand('insertText', false, text);
+    } catch (_e) {
+      inserted = false;
+    }
+    if (!inserted) {
+      const start = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
+      const end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : ta.value.length;
+      ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+      const caret = start + text.length;
+      ta.selectionStart = caret;
+      ta.selectionEnd = caret;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  function savePanelGeom(cat, panel) {
+    const r = panel.getBoundingClientRect();
+    if (!state.snipPanels) state.snipPanels = {};
+    state.snipPanels[cat] = {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+    };
+    saveState();
+  }
+
+  let snipGeomTimer = null;
+
+  function toggleSnipPanel(cat) {
+    const existing = document.getElementById('snip-panel-' + cat);
+    if (existing) {
+      existing.remove();
+      setCatActive(cat, false);
+      return;
+    }
+    const cfg = SNIPPETS[cat];
+    if (!cfg) return;
+
+    const panel = document.createElement('div');
+    panel.className = 'snip-panel';
+    panel.id = 'snip-panel-' + cat;
+
+    const geom = (state.snipPanels && state.snipPanels[cat]) || null;
+    const idx = Object.keys(SNIPPETS).indexOf(cat);
+    if (geom) {
+      panel.style.left = geom.left + 'px';
+      panel.style.top = geom.top + 'px';
+      panel.style.width = geom.width + 'px';
+      panel.style.height = geom.height + 'px';
+    } else {
+      panel.style.left = 200 + idx * 28 + 'px';
+      panel.style.top = 150 + idx * 28 + 'px';
+    }
+
+    const head = document.createElement('div');
+    head.className = 'snip-head';
+    const title = document.createElement('span');
+    title.textContent = cfg.label || cat;
+    const close = document.createElement('button');
+    close.className = 'snip-close';
+    close.textContent = '\u00d7';
+    close.addEventListener('click', () => {
+      panel.remove();
+      setCatActive(cat, false);
+    });
+    head.appendChild(title);
+    head.appendChild(close);
+
+    const body = document.createElement('div');
+    body.className = 'snip-body';
+    (cfg.items || []).forEach((it) => {
+      const b = document.createElement('button');
+      b.className = 'snip-item';
+      b.textContent = it.label || it.text || '';
+      b.title = it.text || '';
+      b.addEventListener('click', () => insertSnippet(it.text || ''));
+      body.appendChild(b);
+    });
+
+    panel.appendChild(head);
+    panel.appendChild(body);
+    document.body.appendChild(panel);
+    setCatActive(cat, true);
+
+    // Drag by the header.
+    head.addEventListener('mousedown', (e) => {
+      if (e.target === close) return;
+      const rect = panel.getBoundingClientRect();
+      const offX = e.clientX - rect.left;
+      const offY = e.clientY - rect.top;
+      panel.classList.add('dragging');
+      const move = (ev) => {
+        panel.style.left = Math.max(0, ev.clientX - offX) + 'px';
+        panel.style.top = Math.max(0, ev.clientY - offY) + 'px';
+      };
+      const up = () => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+        panel.classList.remove('dragging');
+        savePanelGeom(cat, panel);
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up);
+      e.preventDefault();
+    });
+
+    // Persist size changes from the resize grip.
+    if (typeof ResizeObserver === 'function') {
+      const ro = new ResizeObserver(() => {
+        clearTimeout(snipGeomTimer);
+        snipGeomTimer = setTimeout(() => savePanelGeom(cat, panel), 300);
+      });
+      ro.observe(panel);
+    }
+  }
+
+  function wireSnippets() {
+    buildSnipBar();
   }
 
   // ------------------------------------------------------------------
@@ -834,9 +1109,16 @@
       /* ignore */
     }
 
+    try {
+      SNIPPETS = (await api.loadSnippets()) || {};
+    } catch (_e) {
+      SNIPPETS = {};
+    }
+
     wireFields();
     wireViews();
     wireSettings();
+    wireSnippets();
     wireSplitter('splitter', '.layout', '--left-width', 'leftWidth', 260, 640);
 
     await loadLang(state.lang || 'zh');
