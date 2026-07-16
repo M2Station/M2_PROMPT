@@ -1275,6 +1275,20 @@
     return line.slice(0, 16);
   }
 
+  // Grow a manager textarea to fit its content so long snippets show in full
+  // instead of a cramped 2-row box. No-op while the dialog is hidden (its
+  // scrollHeight is 0 then); openSnipManager re-fits once the dialog is shown.
+  function autosizeSnipText(ta) {
+    if (!ta) return;
+    ta.style.height = 'auto';
+    if (ta.scrollHeight > 0) ta.style.height = ta.scrollHeight + 'px';
+  }
+
+  function autosizeAllSnipText() {
+    const list = el('snipItemList');
+    if (list) list.querySelectorAll('textarea').forEach(autosizeSnipText);
+  }
+
   function renderSnipManager() {
     const data = snipDraft || {};
     const cats = Object.keys(data);
@@ -1342,8 +1356,10 @@
       textIn.spellcheck = false;
       textIn.addEventListener('input', () => {
         it.text = textIn.value;
+        autosizeSnipText(textIn);
         markSnipDirty();
       });
+      autosizeSnipText(textIn);
 
       const del = document.createElement('button');
       del.type = 'button';
@@ -1364,6 +1380,7 @@
       row.appendChild(del);
       list.appendChild(row);
     });
+    autosizeAllSnipText();
   }
 
   function openSnipManager() {
@@ -1385,6 +1402,7 @@
     }
     applySnipMgrFont();
     el('snipManagerModal').classList.remove('hidden');
+    autosizeAllSnipText();
   }
 
   // Open the editable snippets.json in the OS default editor for hand-editing.
@@ -1407,18 +1425,16 @@
     el('snipManagerModal').classList.add('hidden');
   }
 
-  // Apply the staged draft to the live snippets, persist, and close.
+  // Apply the staged draft to the live snippets and persist. The manager stays
+  // open afterwards (Save no longer closes it) — the dialog only closes via the
+  // Cancel/Close button, the X, or Esc.
   function saveSnipManager() {
-    if (!snipDraft) {
-      el('snipManagerModal').classList.add('hidden');
-      return;
-    }
+    if (!snipDraft) return;
     SNIPPETS = cloneSnippets(snipDraft);
     persistSnippets(true);
     snipDirty = false;
     updateSnipDirty();
     toast(t('snip.manage.saved'), 'success');
-    closeSnipManager(true);
   }
 
   // After a drag-and-drop, rebuild the active category's item order from the
@@ -1490,18 +1506,23 @@
     el('btnSnipFontUp').addEventListener('click', () => bumpSnipMgrFont(1));
     el('btnSnipFontReset').addEventListener('click', () => setSnipMgrFont(SNIP_FONT_DEFAULT));
     applySnipMgrFont();
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) closeSnipManager(false);
-    });
 
-    // Esc closes the manager while it is open (even from a focused snippet
-    // field). Registered before the palette Esc handler and stops propagation
-    // so only the dialog closes, not any floating panel behind the overlay.
+    // While the manager is open, Esc closes it and Ctrl/Cmd+S saves (mirroring
+    // the Save button, including its disabled-when-unchanged state). Registered
+    // before the palette Esc handler and stops propagation so the shortcuts act
+    // only on the dialog, not any floating panel behind the overlay.
     document.addEventListener('keydown', (e) => {
-      if (e.key !== 'Escape' || modal.classList.contains('hidden')) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      closeSnipManager(false);
+      if (modal.classList.contains('hidden')) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        closeSnipManager(false);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        const save = el('btnSnipSave');
+        if (save && !save.disabled) saveSnipManager();
+      }
     });
 
     const dialog = modal.querySelector('.modal');

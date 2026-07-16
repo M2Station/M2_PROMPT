@@ -104,7 +104,7 @@
   "snip.manage.needCat": "請先建立或選擇一個分類。",
   "snip.manage.needText": "請輸入內容。",
   "snip.manage.save": "儲存",
-  "snip.manage.cancel": "取消",
+  "snip.manage.cancel": "取消/關閉",
   "snip.manage.saved": "片語已儲存。",
   "snip.manage.unsaved": "未儲存的變更",
   "snip.manage.discardConfirm": "有未儲存的變更，確定要放棄？",

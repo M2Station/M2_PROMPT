@@ -104,7 +104,7 @@
   "snip.manage.needCat": "Create or select a category first.",
   "snip.manage.needText": "Enter some content.",
   "snip.manage.save": "Save",
-  "snip.manage.cancel": "Cancel",
+  "snip.manage.cancel": "Cancel / Close",
   "snip.manage.saved": "Snippets saved.",
   "snip.manage.unsaved": "Unsaved changes",
   "snip.manage.discardConfirm": "Discard unsaved changes?",

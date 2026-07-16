@@ -1409,7 +1409,7 @@ kbd {
 
 .snip-edit-row textarea {
   min-height: 34px;
-  max-height: 120px;
+  max-height: none;
   resize: vertical;
   font-family: var(--font-code);
   font-size: var(--snip-font);
