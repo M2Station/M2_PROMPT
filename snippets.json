@@ -4,11 +4,15 @@
     "items": [
       {
         "label": "PR",
-        "text": "CREATE PR."
+        "text": "CREATE PR.\n"
       },
       {
         "label": "送出",
         "text": "COMMIT + PUSH"
+      },
+      {
+        "label": "發布",
+        "text": "PR-based CI release - bump to next version, open & merge PR,, then tag , push tag; CI builds & publishes. Matches repo history.\nex. 0.3.0 > 0.3.1 , 0.3.9 > 0.4.0\n"
       },
       {
         "label": "任務目標",
@@ -20,15 +24,11 @@
       },
       {
         "label": "輸出格式",
-        "text": "請以下列格式輸出：\n"
+        "text": "用MARKDOWN格式輸出：\n用表格格式輸出:\n用MARKDOWN表格輸出:\n"
       },
       {
         "label": "限制條件",
         "text": "限制條件：\n- "
-      },
-      {
-        "label": "範例",
-        "text": "以下是一個範例：\n"
       }
     ]
   },
