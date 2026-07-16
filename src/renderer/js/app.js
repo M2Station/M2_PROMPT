@@ -55,6 +55,7 @@
       leftWidth: 380,
       usePrefix: false,
       outputBase: '',
+      editorFontSize: 13,
       projects: [p],
       activeProjectId: p.id,
     };
@@ -211,6 +212,24 @@
     const chars = text ? text.length : 0;
     if (lang === 'zh') return `${lines} 行 · ${chars} 字元`;
     return `${lines} lines · ${chars} chars`;
+  }
+
+  // Editor-only font size (persisted). Affects just the prompt textarea.
+  function editorFontPx() {
+    const v = Number(state.editorFontSize);
+    return Number.isFinite(v) ? Math.max(10, Math.min(28, v)) : 13;
+  }
+
+  function setEditorFont(size) {
+    const next = Math.max(10, Math.min(28, Math.round(size)));
+    state.editorFontSize = next;
+    const ta = el('sectionBody') && el('sectionBody').querySelector('.log-input');
+    if (ta) ta.style.fontSize = next + 'px';
+    saveState();
+  }
+
+  function bumpEditorFont(delta) {
+    setEditorFont(editorFontPx() + delta);
   }
 
   // ------------------------------------------------------------------
@@ -517,6 +536,7 @@
     const ta = document.createElement('textarea');
     ta.className = 'log-input';
     ta.value = s.content || '';
+    ta.style.fontSize = editorFontPx() + 'px';
     ta.placeholder =
       lang === 'zh'
         ? `在此輸入「${s.name}」的 Prompt 內容…`
@@ -532,6 +552,19 @@
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
         e.preventDefault();
         doExport();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === '=' || e.key === '+') {
+          e.preventDefault();
+          bumpEditorFont(1);
+        } else if (e.key === '-' || e.key === '_') {
+          e.preventDefault();
+          bumpEditorFont(-1);
+        } else if (e.key === '0') {
+          e.preventDefault();
+          setEditorFont(13);
+        }
       }
     });
 
@@ -627,6 +660,9 @@
         renderSection();
       }
     });
+
+    el('btnFontDown').addEventListener('click', () => bumpEditorFont(-1));
+    el('btnFontUp').addEventListener('click', () => bumpEditorFont(1));
   }
 
   // ------------------------------------------------------------------
@@ -945,7 +981,7 @@
   let SNIPPETS = {};
 
   function buildSnipBar() {
-    const bar = el('snipBar');
+    const bar = el('snipCats');
     if (!bar) return;
     bar.innerHTML = '';
     Object.keys(SNIPPETS).forEach((cat) => {
@@ -993,7 +1029,9 @@
   }
 
   function savePanelGeom(cat, panel) {
+    if (!panel || !panel.isConnected) return;
     const r = panel.getBoundingClientRect();
+    if (r.width < 120 || r.height < 90) return; // ignore collapsed / removed panels
     if (!state.snipPanels) state.snipPanels = {};
     state.snipPanels[cat] = {
       left: Math.round(r.left),
@@ -1004,13 +1042,61 @@
     saveState();
   }
 
-  let snipGeomTimer = null;
+  // Restore a panel's saved position/size. Falls back to a top-left default
+  // when there is no saved geometry or the saved position is unreasonable
+  // (off-screen / header not reachable, e.g. after the window was resized).
+  function panelGeom(cat) {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const idx = Math.max(0, Object.keys(SNIPPETS).indexOf(cat));
+    const def = { left: 16 + idx * 24, top: 72 + idx * 24, width: 240, height: 260 };
+    const g = state.snipPanels && state.snipPanels[cat];
+    if (!g) return def;
+    const valid =
+      Number.isFinite(g.left) &&
+      Number.isFinite(g.top) &&
+      Number.isFinite(g.width) &&
+      Number.isFinite(g.height) &&
+      g.width >= 150 &&
+      g.height >= 100 &&
+      g.left >= 0 &&
+      g.top >= 0 &&
+      g.left <= W - 80 &&
+      g.top <= H - 40;
+    if (!valid) return def;
+    return { left: g.left, top: g.top, width: Math.min(g.width, W), height: Math.min(g.height, H) };
+  }
+
+  const snipGeomTimers = {};
+  const snipObservers = {};
+  let activeSnipCat = null;
+
+  // Fully close a panel: persist its final geometry, stop observing it, then
+  // remove it. (If the ResizeObserver were left to fire after removal it would
+  // save a zeroed rect, making the panel reopen at the top-left.)
+  function closeSnipPanel(cat) {
+    const panel = document.getElementById('snip-panel-' + cat);
+    if (snipObservers[cat]) {
+      try {
+        snipObservers[cat].disconnect();
+      } catch (_e) {
+        /* ignore */
+      }
+      delete snipObservers[cat];
+    }
+    clearTimeout(snipGeomTimers[cat]);
+    if (panel) {
+      savePanelGeom(cat, panel);
+      panel.remove();
+    }
+    if (activeSnipCat === cat) activeSnipCat = null;
+    setCatActive(cat, false);
+  }
 
   function toggleSnipPanel(cat) {
     const existing = document.getElementById('snip-panel-' + cat);
     if (existing) {
-      existing.remove();
-      setCatActive(cat, false);
+      closeSnipPanel(cat);
       return;
     }
     const cfg = SNIPPETS[cat];
@@ -1020,17 +1106,11 @@
     panel.className = 'snip-panel';
     panel.id = 'snip-panel-' + cat;
 
-    const geom = (state.snipPanels && state.snipPanels[cat]) || null;
-    const idx = Object.keys(SNIPPETS).indexOf(cat);
-    if (geom) {
-      panel.style.left = geom.left + 'px';
-      panel.style.top = geom.top + 'px';
-      panel.style.width = geom.width + 'px';
-      panel.style.height = geom.height + 'px';
-    } else {
-      panel.style.left = 200 + idx * 28 + 'px';
-      panel.style.top = 150 + idx * 28 + 'px';
-    }
+    const geom = panelGeom(cat);
+    panel.style.left = geom.left + 'px';
+    panel.style.top = geom.top + 'px';
+    panel.style.width = geom.width + 'px';
+    panel.style.height = geom.height + 'px';
 
     const head = document.createElement('div');
     head.className = 'snip-head';
@@ -1039,10 +1119,7 @@
     const close = document.createElement('button');
     close.className = 'snip-close';
     close.textContent = '\u00d7';
-    close.addEventListener('click', () => {
-      panel.remove();
-      setCatActive(cat, false);
-    });
+    close.addEventListener('click', () => closeSnipPanel(cat));
     head.appendChild(title);
     head.appendChild(close);
 
@@ -1061,6 +1138,7 @@
     panel.appendChild(body);
     document.body.appendChild(panel);
     setCatActive(cat, true);
+    activeSnipCat = cat;
 
     // Drag by the header.
     head.addEventListener('mousedown', (e) => {
@@ -1087,15 +1165,232 @@
     // Persist size changes from the resize grip.
     if (typeof ResizeObserver === 'function') {
       const ro = new ResizeObserver(() => {
-        clearTimeout(snipGeomTimer);
-        snipGeomTimer = setTimeout(() => savePanelGeom(cat, panel), 300);
+        clearTimeout(snipGeomTimers[cat]);
+        snipGeomTimers[cat] = setTimeout(() => savePanelGeom(cat, panel), 300);
       });
       ro.observe(panel);
+      snipObservers[cat] = ro;
     }
   }
 
   function wireSnippets() {
     buildSnipBar();
+    wireSnipManager();
+
+    // Track which snippet panel the user last interacted with (or opened) so
+    // Escape can close it. Clicking outside any panel disarms Escape.
+    document.addEventListener('mousedown', (e) => {
+      const panel = e.target && e.target.closest ? e.target.closest('.snip-panel') : null;
+      activeSnipCat = panel ? panel.id.replace('snip-panel-', '') : null;
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !activeSnipCat) return;
+      if (document.getElementById('snip-panel-' + activeSnipCat)) {
+        e.preventDefault();
+        closeSnipPanel(activeSnipCat);
+      }
+      activeSnipCat = null;
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Snippet manager: add / delete snippets & categories, paste-to-add.
+  // Edits persist to snippets.json and rebuild the toolbar live.
+  // ------------------------------------------------------------------
+  let snipMgrCat = null;
+  let snipSaveTimer = null;
+
+  function persistSnippets(immediate) {
+    buildSnipBar();
+    clearTimeout(snipSaveTimer);
+    const doSave = () => {
+      if (api.saveSnippets) {
+        try {
+          api.saveSnippets(SNIPPETS);
+        } catch (_e) {
+          /* ignore */
+        }
+      }
+    };
+    if (immediate) doSave();
+    else snipSaveTimer = setTimeout(doSave, 400);
+  }
+
+  function firstLineLabel(text) {
+    const line =
+      String(text || '')
+        .split('\n')
+        .map((l) => l.trim())
+        .find((l) => l.length > 0) || 'Snippet';
+    return line.slice(0, 16);
+  }
+
+  function renderSnipManager() {
+    const cats = Object.keys(SNIPPETS);
+    if (!snipMgrCat || !SNIPPETS[snipMgrCat]) snipMgrCat = cats[0] || null;
+
+    const sel = el('snipCatSelect');
+    sel.innerHTML = '';
+    cats.forEach((k) => {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = SNIPPETS[k].label || k;
+      sel.appendChild(opt);
+    });
+    if (snipMgrCat) sel.value = snipMgrCat;
+    el('snipCatLabel').value = snipMgrCat ? SNIPPETS[snipMgrCat].label || '' : '';
+
+    const list = el('snipItemList');
+    list.innerHTML = '';
+    const items = snipMgrCat && SNIPPETS[snipMgrCat].items;
+    if (!items || !items.length) {
+      const empty = document.createElement('div');
+      empty.className = 'snip-edit-empty';
+      empty.textContent = t('snip.manage.empty');
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach((it, i) => {
+      const row = document.createElement('div');
+      row.className = 'snip-edit-row';
+      const labelIn = document.createElement('input');
+      labelIn.type = 'text';
+      labelIn.value = it.label || '';
+      labelIn.placeholder = t('snip.manage.labelPh');
+      labelIn.addEventListener('input', () => {
+        it.label = labelIn.value;
+        persistSnippets(false);
+      });
+      const textIn = document.createElement('textarea');
+      textIn.value = it.text || '';
+      textIn.rows = 2;
+      textIn.spellcheck = false;
+      textIn.addEventListener('input', () => {
+        it.text = textIn.value;
+        persistSnippets(false);
+      });
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'btn-remove';
+      del.textContent = '\u00d7';
+      del.addEventListener('click', () => {
+        SNIPPETS[snipMgrCat].items.splice(i, 1);
+        persistSnippets(true);
+        renderSnipManager();
+      });
+      row.appendChild(labelIn);
+      row.appendChild(textIn);
+      row.appendChild(del);
+      list.appendChild(row);
+    });
+  }
+
+  function openSnipManager() {
+    snipMgrCat = Object.keys(SNIPPETS)[0] || null;
+    renderSnipManager();
+    const dialog = el('snipManagerModal').querySelector('.modal');
+    if (dialog) {
+      // Re-center each open (keep any resized dimensions).
+      dialog.style.position = '';
+      dialog.style.left = '';
+      dialog.style.top = '';
+      dialog.style.margin = '';
+    }
+    el('snipManagerModal').classList.remove('hidden');
+  }
+
+  // Make a modal dialog draggable by a handle (e.g. its header).
+  function makeModalDraggable(dialog, handle) {
+    handle.addEventListener('mousedown', (e) => {
+      if (e.target.closest && e.target.closest('.btn-remove')) return;
+      const rect = dialog.getBoundingClientRect();
+      dialog.style.position = 'absolute';
+      dialog.style.margin = '0';
+      dialog.style.left = rect.left + 'px';
+      dialog.style.top = rect.top + 'px';
+      const offX = e.clientX - rect.left;
+      const offY = e.clientY - rect.top;
+      const move = (ev) => {
+        dialog.style.left = Math.max(0, ev.clientX - offX) + 'px';
+        dialog.style.top = Math.max(0, ev.clientY - offY) + 'px';
+      };
+      const up = () => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up);
+      e.preventDefault();
+    });
+  }
+
+  function wireSnipManager() {
+    const modal = el('snipManagerModal');
+    if (!modal) return;
+    el('btnSnipManage').addEventListener('click', openSnipManager);
+    el('btnSnipManagerClose').addEventListener('click', () => modal.classList.add('hidden'));
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.add('hidden');
+    });
+
+    const dialog = modal.querySelector('.modal');
+    const head = dialog && dialog.querySelector('.modal-head');
+    if (dialog && head) makeModalDraggable(dialog, head);
+
+    el('snipCatSelect').addEventListener('change', () => {
+      snipMgrCat = el('snipCatSelect').value;
+      renderSnipManager();
+    });
+
+    el('snipCatLabel').addEventListener('input', () => {
+      if (snipMgrCat && SNIPPETS[snipMgrCat]) {
+        SNIPPETS[snipMgrCat].label = el('snipCatLabel').value;
+        const opt = el('snipCatSelect').querySelector('option[value="' + snipMgrCat + '"]');
+        if (opt) opt.textContent = el('snipCatLabel').value || snipMgrCat;
+        persistSnippets(false);
+      }
+    });
+
+    el('btnSnipAddCat').addEventListener('click', () => {
+      const name = el('snipNewCat').value.trim();
+      if (!name) return;
+      const key = 'cat_' + Date.now().toString(36);
+      SNIPPETS[key] = { label: name, items: [] };
+      el('snipNewCat').value = '';
+      snipMgrCat = key;
+      persistSnippets(true);
+      renderSnipManager();
+    });
+
+    el('btnSnipDelCat').addEventListener('click', () => {
+      if (!snipMgrCat) return;
+      if (!window.confirm(t('snip.manage.delCatConfirm'))) return;
+      delete SNIPPETS[snipMgrCat];
+      snipMgrCat = Object.keys(SNIPPETS)[0] || null;
+      persistSnippets(true);
+      renderSnipManager();
+    });
+
+    el('btnSnipAddItem').addEventListener('click', () => {
+      if (!snipMgrCat) {
+        toast(t('snip.manage.needCat'), 'error');
+        return;
+      }
+      const text = el('snipNewText').value;
+      if (!text.trim()) {
+        toast(t('snip.manage.needText'), 'error');
+        return;
+      }
+      let label = el('snipNewLabel').value.trim();
+      if (!label) label = firstLineLabel(text);
+      SNIPPETS[snipMgrCat].items.push({ label, text });
+      el('snipNewLabel').value = '';
+      el('snipNewText').value = '';
+      persistSnippets(true);
+      renderSnipManager();
+      toast(t('snip.manage.added'), 'success');
+    });
   }
 
   // ------------------------------------------------------------------

@@ -392,6 +392,18 @@ function registerIpc() {
     }
   });
 
+  // Persist edited snippets back to the editable snippets.json next to the app.
+  ipcMain.handle('snippets:save', (_e, data) => {
+    try {
+      if (!data || typeof data !== 'object') return { ok: false, error: 'INVALID' };
+      const external = path.join(appRoot(), 'snippets.json');
+      fs.writeFileSync(external, JSON.stringify(data, null, 2), 'utf8');
+      return { ok: true, path: external };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
   ipcMain.handle('i18n:load', (_e, lang) => {
     const safe = lang === 'en' ? 'en' : 'zh';
     try {

@@ -85,9 +85,17 @@
         <!-- Project tabs: each tab is a whole project (fields + prompt sections) -->
         <nav class="exp-tabs" id="projTabs"></nav>
 
-        <!-- Snippet toolbar: each button opens a floating, draggable panel of
-             commonly-used prompt / keyword buttons. -->
-        <nav class="snip-bar" id="snipBar"></nav>
+        <!-- Snippet toolbar: a tools button (manage snippets) + category buttons
+             that open floating, draggable panels of quick prompt inserts. -->
+        <nav class="snip-bar" id="snipBar">
+          <button class="snip-tool" id="btnSnipManage" data-i18n-title="snip.manage.title" title="設定 SNIPPET">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+          <div class="snip-cats" id="snipCats"></div>
+        </nav>
 
         <main class="layout">
           <!-- Left: project fields -->
@@ -170,6 +178,8 @@
               <div class="tabs" id="sectionTabs"></div>
               <div class="log-tools">
                 <span class="counter" id="counter">0 行 · 0 字元</span>
+                <button class="btn btn-ghost btn-sm btn-font" id="btnFontDown" data-i18n-title="btn.fontDown.title" title="縮小編輯區字體 (Ctrl -)">A-</button>
+                <button class="btn btn-ghost btn-sm btn-font" id="btnFontUp" data-i18n-title="btn.fontUp.title" title="放大編輯區字體 (Ctrl +)">A+</button>
                 <button class="btn btn-ghost btn-sm" id="btnExportSingle" data-i18n-title="btn.exportSingle.title" title="只輸出目前這個分頁">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -248,6 +258,42 @@
             <label for="setTypeLen"><span data-i18n="settings.typeLen">分頁名稱長度</span> <span class="opt" data-i18n="settings.typeLen.opt">(1–100)</span></label>
             <input id="setTypeLen" type="number" min="1" max="100" step="1" />
             <small data-i18n="settings.typeLen.note">分頁（檔名／子資料夾）的最大長度。</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SNIPPET manager modal -->
+    <div class="modal-overlay hidden" id="snipManagerModal">
+      <div class="modal modal-wide">
+        <div class="modal-head">
+          <h2 data-i18n="snip.manage.title">SNIPPET 設定</h2>
+          <button class="btn-remove" id="btnSnipManagerClose" title="Close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="field">
+            <label><span data-i18n="snip.manage.category">分類</span></label>
+            <div class="snip-cat-row">
+              <select id="snipCatSelect"></select>
+              <input id="snipCatLabel" type="text" data-i18n-ph="snip.manage.catName" placeholder="分類名稱" autocomplete="off" />
+              <button type="button" class="btn btn-ghost btn-sm" id="btnSnipDelCat" data-i18n="snip.manage.delCat">刪除分類</button>
+            </div>
+            <div class="snip-cat-row">
+              <input id="snipNewCat" type="text" data-i18n-ph="snip.manage.newCatPh" placeholder="新分類名稱" autocomplete="off" />
+              <button type="button" class="btn btn-ghost btn-sm" id="btnSnipAddCat" data-i18n="snip.manage.addCat">＋ 新增分類</button>
+            </div>
+          </div>
+          <div class="field">
+            <label><span data-i18n="snip.manage.items">此分類的片語</span></label>
+            <div id="snipItemList" class="snip-edit-list"></div>
+          </div>
+          <div class="field">
+            <label><span data-i18n="snip.manage.add">新增片語（可直接貼上內容）</span></label>
+            <input id="snipNewLabel" type="text" data-i18n-ph="snip.manage.labelPh" placeholder="按鈕名稱（留空＝取內容第一行）" autocomplete="off" />
+            <textarea id="snipNewText" rows="3" data-i18n-ph="snip.manage.textPh" placeholder="貼上要插入的 Prompt / 關鍵字…" spellcheck="false"></textarea>
+            <div class="snip-add-actions">
+              <button type="button" class="btn btn-primary btn-sm" id="btnSnipAddItem" data-i18n="snip.manage.addItem">＋ 加入此分類</button>
+            </div>
           </div>
         </div>
       </div>
