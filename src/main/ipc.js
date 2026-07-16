@@ -10,7 +10,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { ipcMain, app, shell, dialog, BrowserWindow } = require('electron');
+const { ipcMain, app, shell, dialog, BrowserWindow, nativeImage } = require('electron');
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -292,6 +292,21 @@ function registerIpc() {
       }
     } catch (_err) {
       /* best-effort cache */
+    }
+    return true;
+  });
+
+  // Set the window / taskbar icon from a PNG data URL rendered by the renderer
+  // (so the app icon matches the in-app M2 logo without a bundled icon file).
+  ipcMain.handle('app:setIcon', (_e, dataUrl) => {
+    try {
+      if (typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png')) {
+        const img = nativeImage.createFromDataURL(dataUrl);
+        const win = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0];
+        if (win && img && !img.isEmpty()) win.setIcon(img);
+      }
+    } catch (_err) {
+      /* ignore */
     }
     return true;
   });

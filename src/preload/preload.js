@@ -14,6 +14,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('m2prompt', {
   appVersion: () => ipcRenderer.invoke('app:version'),
   setStartupBg: (color) => ipcRenderer.invoke('app:setStartupBg', color),
+  setAppIcon: (dataUrl) => ipcRenderer.invoke('app:setIcon', dataUrl),
   exportPrompt: (payload) => ipcRenderer.invoke('prompt:export', payload),
   exportSinglePrompt: (payload) => ipcRenderer.invoke('prompt:exportSingle', payload),
   openFolder: (targetPath) => ipcRenderer.invoke('prompt:openFolder', targetPath),
