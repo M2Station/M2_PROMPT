@@ -42,13 +42,6 @@
             </svg>
             <span data-i18n="tab.output">PROMPT_OUTPUT</span>
           </button>
-          <button class="feature-tab" data-view="library">
-            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-            </svg>
-            <span data-i18n="tab.library">PROMPT 管理</span>
-          </button>
         </nav>
 
         <div class="topbar-actions">
@@ -202,6 +195,12 @@
         <!-- Action bar -->
         <footer class="actionbar">
           <div class="action-left">
+            <button class="btn btn-ghost btn-sm" id="btnOpenFolder" data-i18n-title="btn.openFolder.title" title="開啟輸出資料夾">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span data-i18n="btn.openFolder">開啟資料夾</span>
+            </button>
             <span class="kbd-hint"><span data-i18n="kbd.pre">提示：</span><kbd>Ctrl</kbd> + <kbd>Enter</kbd><span data-i18n="kbd.post"> 快速輸出</span></span>
           </div>
           <div class="action-right">
@@ -220,47 +219,6 @@
         <section class="result hidden" id="result"></section>
       </div>
       <!-- ===================== /PROMPT_OUTPUT view ===================== -->
-
-      <!-- ===================== PROMPT Library view ===================== -->
-      <div class="feature-view" id="view-library">
-        <div class="analysis">
-          <div class="analysis-toolbar">
-            <button class="btn btn-ghost btn-sm" id="btnLibRefresh" data-i18n="lib.refresh">重新整理</button>
-            <button class="btn btn-ghost btn-sm" id="btnLibOpen" data-i18n="lib.open">開啟資料夾</button>
-            <code class="ana-path" id="libPath"></code>
-          </div>
-          <div class="analysis-body">
-            <aside class="panel ana-tree-panel">
-              <div class="panel-head">
-                <h2 data-i18n="lib.files">已輸出的 Prompt</h2>
-                <span class="hint" id="libCount"></span>
-              </div>
-              <div class="ana-filter">
-                <svg class="ana-filter-ic" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-                <input type="text" id="libFilter" class="ana-filter-input" data-i18n-ph="lib.filter.ph" placeholder="Type to filter…" spellcheck="false" autocomplete="off" />
-              </div>
-              <div class="panel-body ana-tree" id="libTree"></div>
-            </aside>
-            <div class="splitter" id="libSplitter" data-i18n-title="splitter.title" title="拖曳調整左右寬度"></div>
-            <section class="panel ana-view-panel">
-              <div class="panel-head">
-                <h2 id="libViewName" data-i18n="lib.viewer">檢視</h2>
-                <div class="log-tools">
-                  <span class="counter" id="libViewMeta"></span>
-                  <button class="btn btn-ghost btn-sm" id="btnLibOpenThis" data-i18n="lib.openThis" disabled>開啟此資料夾</button>
-                  <button class="btn btn-ghost btn-sm" id="btnLibCopy" data-i18n="lib.copy" disabled>複製</button>
-                </div>
-              </div>
-              <div class="panel-body ana-view">
-                <div class="ana-scroll" id="libScroll" tabindex="-1">
-                  <div class="ana-code" id="libViewContent"><span class="ana-hint" data-i18n="lib.pick.hint">從左側選擇一個 Prompt 來檢視。</span></div>
-                </div>
-              </div>
-            </section>
-          </div>
-        </div>
-      </div>
-      <!-- ===================== /PROMPT Library view ===================== -->
     </div>
 
     <!-- Toasts -->

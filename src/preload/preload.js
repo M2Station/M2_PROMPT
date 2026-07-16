@@ -19,9 +19,5 @@ contextBridge.exposeInMainWorld('m2prompt', {
   openFolder: (targetPath) => ipcRenderer.invoke('prompt:openFolder', targetPath),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pickFolder', defaultPath),
-  promptRoot: () => ipcRenderer.invoke('fs:promptRoot'),
-  listDir: (dirPath) => ipcRenderer.invoke('fs:list', dirPath),
-  readText: (filePath) => ipcRenderer.invoke('fs:readText', filePath),
-  writeText: (payload) => ipcRenderer.invoke('fs:writeText', payload),
   loadI18n: (lang) => ipcRenderer.invoke('i18n:load', lang),
 });

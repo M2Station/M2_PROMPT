@@ -56,7 +56,6 @@
       abbrevLen: 30,
       typeLen: 60,
       leftWidth: 380,
-      libLeftWidth: 360,
       projects: [p],
       activeProjectId: p.id,
     };
@@ -305,6 +304,29 @@
   // ------------------------------------------------------------------
   // Rendering: section (function) tabs + editor
   // ------------------------------------------------------------------
+  let pendingRenameId = null;
+
+  // Section (tab) names must be unique within a project - they become folder /
+  // file names on export, so a clash would overwrite files. Compared
+  // case-insensitively (Windows paths are case-insensitive).
+  function sectionNameExists(proj, nameLower, excludeId) {
+    return proj.sections.some(
+      (x) => x.id !== excludeId && (x.name || '').trim().toLowerCase() === nameLower
+    );
+  }
+
+  function uniqueSectionName(proj, base, excludeId) {
+    const fallback = lang === 'zh' ? '新分頁' : 'New';
+    const trimmed = (base || '').trim() || fallback;
+    let candidate = trimmed;
+    let n = 2;
+    while (sectionNameExists(proj, candidate.toLowerCase(), excludeId)) {
+      candidate = `${trimmed} (${n})`;
+      n += 1;
+    }
+    return candidate;
+  }
+
   function renderSectionTabs() {
     const p = activeProject();
     const tabs = el('sectionTabs');
@@ -316,18 +338,30 @@
       const btn = document.createElement('button');
       btn.className = 'tab' + (s.id === p.activeSectionId ? ' active' : '');
       btn.title = t('tab.rename.title');
+      btn.dataset.sid = s.id;
 
       const name = document.createElement('span');
       name.className = 'tab-name';
       name.textContent = s.name;
       btn.appendChild(name);
 
+      // Single click switches tab with a LIGHT update (toggle active class +
+      // rebuild the editor only). We intentionally do NOT rebuild the tab
+      // buttons here, so the element survives and dblclick-to-rename fires.
       btn.addEventListener('click', () => {
-        p.activeSectionId = s.id;
-        saveState();
-        renderSection();
+        if (p.activeSectionId !== s.id) {
+          p.activeSectionId = s.id;
+          saveState();
+        }
+        el('sectionTabs')
+          .querySelectorAll('.tab')
+          .forEach((b) => b.classList.toggle('active', b.dataset.sid === s.id));
+        renderEditor();
       });
-      btn.addEventListener('dblclick', () => renameSection(s));
+      btn.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        beginRename(s, btn, name);
+      });
 
       if (p.sections.length > 1) {
         const close = document.createElement('span');
@@ -347,34 +381,87 @@
         btn.appendChild(close);
       }
       tabs.appendChild(btn);
+
+      if (s.id === pendingRenameId) {
+        pendingRenameId = null;
+        requestAnimationFrame(() => beginRename(s, btn, name));
+      }
     });
 
     const add = document.createElement('button');
     add.className = 'tab tab-add';
     add.textContent = '+';
     add.addEventListener('click', () => {
-      const s = newSection(lang === 'zh' ? '新分頁' : 'New');
+      const s = newSection(uniqueSectionName(p, lang === 'zh' ? '新分頁' : 'New'));
       p.sections.push(s);
       p.activeSectionId = s.id;
+      pendingRenameId = s.id;
       saveState();
       renderSection();
-      setTimeout(() => renameSection(s), 0);
     });
     tabs.appendChild(add);
   }
 
-  function renameSection(s) {
-    const label = lang === 'zh' ? '分頁名稱：' : 'Tab name:';
-    const next = window.prompt(label, s.name);
-    if (next && next.trim()) {
-      s.name = next.trim();
-      saveState();
+  // Inline tab rename (Electron's renderer has no window.prompt). Swaps the
+  // tab label for a text input; Enter / blur commits, Escape cancels.
+  function beginRename(s, btn, nameSpan) {
+    if (btn.querySelector('.tab-rename-input')) return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'tab-rename-input';
+    input.value = s.name;
+    input.spellcheck = false;
+    input.maxLength = 100;
+
+    ['click', 'dblclick', 'mousedown'].forEach((ev) =>
+      input.addEventListener(ev, (e) => e.stopPropagation())
+    );
+
+    let done = false;
+    const commit = (save) => {
+      if (done) return;
+      const next = input.value.trim();
+      // Reject a name that clashes with another tab in this project.
+      if (save && next && sectionNameExists(activeProject(), next.toLowerCase(), s.id)) {
+        toast(t('toast.dupName'), 'error');
+        requestAnimationFrame(() => {
+          input.focus();
+          input.select();
+        });
+        return;
+      }
+      done = true;
+      if (save && next) {
+        s.name = next;
+        saveState();
+      }
       renderSection();
-    }
+    };
+
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        commit(true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        commit(false);
+      }
+    });
+    input.addEventListener('blur', () => commit(true));
+
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
   }
 
   function renderSection() {
     renderSectionTabs();
+    renderEditor();
+  }
+
+  function renderEditor() {
     const p = activeProject();
     const s = activeSection(p);
     const body = el('sectionBody');
@@ -535,7 +622,6 @@
       if (res && res.ok) {
         showResult(res);
         toast(`${t('toast.exportOk')} ${res.folder}`, 'success');
-        refreshLibrary();
       } else if (res && res.error === 'EMPTY') {
         toast(t('toast.exportEmpty'), 'error');
       } else {
@@ -560,7 +646,6 @@
       if (res && res.ok) {
         showResult(res);
         toast(`${t('toast.exportOk')} ${res.folder}`, 'success');
-        refreshLibrary();
       } else if (res && res.error === 'EMPTY') {
         toast(t('toast.exportEmpty'), 'error');
       } else {
@@ -582,7 +667,7 @@
     title.textContent = t('result.title');
     const openBtn = document.createElement('button');
     openBtn.className = 'btn btn-ghost btn-sm';
-    openBtn.textContent = t('lib.open');
+    openBtn.textContent = t('result.open');
     openBtn.addEventListener('click', () => api.openFolder(res.path));
     head.appendChild(title);
     head.appendChild(openBtn);
@@ -602,101 +687,6 @@
   }
 
   // ------------------------------------------------------------------
-  // Library
-  // ------------------------------------------------------------------
-  let libItems = [];
-  let libSelected = null;
-
-  async function refreshLibrary() {
-    const res = await api.listDir('');
-    const path = res && res.path ? res.path : '';
-    el('libPath').textContent = path;
-    el('libPath').title = path;
-    libItems = res && res.ok ? res.items.filter((it) => it.isDir) : [];
-    renderLibTree();
-  }
-
-  function renderLibTree() {
-    const tree = el('libTree');
-    const filter = (el('libFilter').value || '').trim().toLowerCase();
-    const items = filter
-      ? libItems.filter((it) => it.name.toLowerCase().includes(filter))
-      : libItems;
-    el('libCount').textContent = String(items.length);
-    tree.innerHTML = '';
-    if (!items.length) {
-      const empty = document.createElement('div');
-      empty.className = 'ana-empty';
-      empty.textContent = t('lib.empty');
-      tree.appendChild(empty);
-      return;
-    }
-    items.forEach((it) => {
-      const row = document.createElement('div');
-      row.className = 'ana-row' + (libSelected === it.path ? ' selected' : '');
-      const ic = document.createElement('span');
-      ic.className = 'ana-ic';
-      ic.innerHTML =
-        '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
-      const main = document.createElement('div');
-      main.className = 'ana-rowmain';
-      const name = document.createElement('span');
-      name.className = 'ana-name';
-      name.textContent = it.name;
-      const sub = document.createElement('span');
-      sub.className = 'ana-sub';
-      sub.textContent = new Date(it.mtime).toLocaleString();
-      main.appendChild(name);
-      main.appendChild(sub);
-      row.appendChild(ic);
-      row.appendChild(main);
-      row.addEventListener('click', () => openLibItem(it));
-      tree.appendChild(row);
-    });
-  }
-
-  async function openLibItem(it) {
-    libSelected = it.path;
-    renderLibTree();
-    el('libViewName').textContent = it.name;
-    el('btnLibOpenThis').disabled = false;
-    el('btnLibOpenThis').onclick = () => api.openFolder(it.path);
-
-    // Prefer prompt.md; fall back to first file in folder.
-    const listing = await api.listDir(it.path);
-    let target = null;
-    if (listing && listing.ok) {
-      target =
-        listing.items.find((x) => !x.isDir && x.name.toLowerCase() === 'prompt.md') ||
-        listing.items.find((x) => !x.isDir && /\.(md|txt|json)$/i.test(x.name)) ||
-        listing.items.find((x) => !x.isDir);
-    }
-    if (!target) {
-      el('libViewContent').textContent = '';
-      return;
-    }
-    const read = await api.readText(target.path);
-    const text = read && read.ok ? read.text : (read ? read.error : '');
-    el('libViewContent').textContent = text;
-    el('libViewMeta').textContent = counterText(text);
-    el('btnLibCopy').disabled = false;
-    el('btnLibCopy').onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(text);
-        toast(t('toast.copyOk'), 'success');
-      } catch (_e) {
-        toast('Clipboard error', 'error');
-      }
-    };
-  }
-
-  function wireLibrary() {
-    el('btnLibRefresh').addEventListener('click', refreshLibrary);
-    el('btnLibOpen').addEventListener('click', () => api.openFolder(''));
-    el('libFilter').addEventListener('input', renderLibTree);
-  }
-
-  // ------------------------------------------------------------------
   // Feature view switching
   // ------------------------------------------------------------------
   function wireViews() {
@@ -706,13 +696,16 @@
         document.querySelectorAll('.feature-tab').forEach((b) => b.classList.toggle('active', b === btn));
         document.querySelectorAll('.feature-view').forEach((v) => v.classList.remove('active'));
         el('view-' + view).classList.add('active');
-        if (view === 'library') refreshLibrary();
       });
     });
 
     el('btnExport').addEventListener('click', doExport);
     el('btnExportSingle').addEventListener('click', doExportSingle);
     el('btnOpenExplorer').addEventListener('click', () => api.openFolder(''));
+    el('btnOpenFolder').addEventListener('click', () => {
+      const base = (activeProject().fields.outputBase || '').trim();
+      api.openFolder(base);
+    });
     el('btnOpenBase').addEventListener('click', () => {
       const base = (activeProject().fields.outputBase || '').trim();
       api.openFolder(base);
@@ -844,9 +837,7 @@
     wireFields();
     wireViews();
     wireSettings();
-    wireLibrary();
     wireSplitter('splitter', '.layout', '--left-width', 'leftWidth', 260, 640);
-    wireSplitter('libSplitter', '.analysis-body', '--ana-left-width', 'libLeftWidth', 240, 640);
 
     await loadLang(state.lang || 'zh');
   }

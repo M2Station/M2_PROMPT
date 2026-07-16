@@ -161,62 +161,6 @@ function registerIpc() {
     return res.filePaths[0];
   });
 
-  ipcMain.handle('fs:promptRoot', () => defaultOutputRoot());
-
-  ipcMain.handle('fs:list', (_e, dirPath) => {
-    const target = dirPath && dirPath.trim() ? dirPath : defaultOutputRoot();
-    try {
-      ensureDir(target);
-      const entries = fs.readdirSync(target, { withFileTypes: true });
-      const items = entries.map((ent) => {
-        const full = path.join(target, ent.name);
-        let mtime = 0;
-        let size = 0;
-        try {
-          const st = fs.statSync(full);
-          mtime = st.mtimeMs;
-          size = st.size;
-        } catch (_err) {
-          /* ignore */
-        }
-        return {
-          name: ent.name,
-          path: full,
-          isDir: ent.isDirectory(),
-          mtime,
-          size,
-        };
-      });
-      items.sort((a, b) => {
-        if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-        return b.mtime - a.mtime;
-      });
-      return { ok: true, path: target, items };
-    } catch (err) {
-      return { ok: false, error: String(err && err.message ? err.message : err) };
-    }
-  });
-
-  ipcMain.handle('fs:readText', (_e, filePath) => {
-    try {
-      const text = fs.readFileSync(filePath, 'utf8');
-      return { ok: true, text };
-    } catch (err) {
-      return { ok: false, error: String(err && err.message ? err.message : err) };
-    }
-  });
-
-  ipcMain.handle('fs:writeText', (_e, payload) => {
-    try {
-      const { filePath, text } = payload || {};
-      if (!filePath) return { ok: false, error: 'No file path' };
-      fs.writeFileSync(filePath, text == null ? '' : String(text), 'utf8');
-      return { ok: true };
-    } catch (err) {
-      return { ok: false, error: String(err && err.message ? err.message : err) };
-    }
-  });
-
   ipcMain.handle('i18n:load', (_e, lang) => {
     const safe = lang === 'en' ? 'en' : 'zh';
     try {

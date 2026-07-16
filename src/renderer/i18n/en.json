@@ -1,7 +1,6 @@
 {
   "brand.subtitle": "Prompt Toolbox",
   "tab.output": "PROMPT_OUTPUT",
-  "tab.library": "PROMPT Library",
 
   "settings.title": "Settings",
   "btn.explorer": "Explorer",
@@ -59,18 +58,11 @@
   "kbd.pre": "Tip: ",
   "kbd.post": " to export quickly",
   "btn.export": "Export",
+  "btn.openFolder": "Open Folder",
+  "btn.openFolder.title": "Open the output folder (where exported prompts are saved)",
 
   "result.title": "Export Complete",
-
-  "lib.refresh": "Refresh",
-  "lib.open": "Open Folder",
-  "lib.files": "Exported Prompts",
-  "lib.filter.ph": "Type to filter…",
-  "lib.empty": "Nothing yet. Create and export your first prompt from the PROMPT_OUTPUT tab.",
-  "lib.viewer": "Viewer",
-  "lib.copy": "Copy",
-  "lib.openThis": "Open This Folder",
-  "lib.pick.hint": "Pick a prompt on the left to view it.",
+  "result.open": "Open Folder",
 
   "settings.theme": "Theme",
   "settings.theme.opt": "Theme",
@@ -88,6 +80,7 @@
   "toast.exportErr": "Export failed: ",
   "toast.copyOk": "Copied to clipboard.",
   "toast.summaryOk": "Project summary copied.",
+  "toast.dupName": "Tab name must be unique.",
   "toast.reset": "Fields reset to default.",
   "toast.nextProj": "Started next project."
 }

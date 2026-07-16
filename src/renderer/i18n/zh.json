@@ -1,7 +1,6 @@
 {
   "brand.subtitle": "Prompt 工具集 · Toolbox",
   "tab.output": "PROMPT_OUTPUT",
-  "tab.library": "PROMPT 管理",
 
   "settings.title": "設定",
   "btn.explorer": "檔案總管",
@@ -59,18 +58,11 @@
   "kbd.pre": "提示：",
   "kbd.post": " 快速輸出",
   "btn.export": "輸出",
+  "btn.openFolder": "開啟資料夾",
+  "btn.openFolder.title": "開啟輸出資料夾（存放已輸出的 Prompt）",
 
   "result.title": "輸出完成",
-
-  "lib.refresh": "重新整理",
-  "lib.open": "開啟資料夾",
-  "lib.files": "已輸出的 Prompt",
-  "lib.filter.ph": "輸入以篩選…",
-  "lib.empty": "尚無輸出。到 PROMPT_OUTPUT 分頁建立並輸出你的第一個 Prompt。",
-  "lib.viewer": "檢視",
-  "lib.copy": "複製",
-  "lib.openThis": "開啟此資料夾",
-  "lib.pick.hint": "從左側選擇一個 Prompt 來檢視。",
+  "result.open": "開啟資料夾",
 
   "settings.theme": "主題",
   "settings.theme.opt": "Theme",
@@ -88,6 +80,7 @@
   "toast.exportErr": "輸出失敗：",
   "toast.copyOk": "已複製到剪貼簿。",
   "toast.summaryOk": "已複製專案摘要。",
+  "toast.dupName": "分頁名稱不能重複。",
   "toast.reset": "已還原預設欄位。",
   "toast.nextProj": "已開始下一個專案。"
 }
