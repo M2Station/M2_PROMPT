@@ -1195,11 +1195,34 @@
   }
 
   // ------------------------------------------------------------------
-  // Snippet manager: add / delete snippets & categories, paste-to-add.
-  // Edits persist to snippets.json and rebuild the toolbar live.
+  // Snippet manager: add / delete / reorder snippets & categories.
+  // Edits are staged in a working copy (snipDraft); they are only applied to
+  // SNIPPETS / snippets.json when the user clicks Save.
   // ------------------------------------------------------------------
   let snipMgrCat = null;
   let snipSaveTimer = null;
+  let snipDraft = null;
+  let snipDirty = false;
+
+  function cloneSnippets(obj) {
+    try {
+      return JSON.parse(JSON.stringify(obj || {}));
+    } catch (_e) {
+      return {};
+    }
+  }
+
+  function markSnipDirty() {
+    snipDirty = true;
+    updateSnipDirty();
+  }
+
+  function updateSnipDirty() {
+    const flag = el('snipDirtyFlag');
+    if (flag) flag.classList.toggle('show', snipDirty);
+    const save = el('btnSnipSave');
+    if (save) save.disabled = !snipDirty;
+  }
 
   function persistSnippets(immediate) {
     buildSnipBar();
@@ -1227,23 +1250,24 @@
   }
 
   function renderSnipManager() {
-    const cats = Object.keys(SNIPPETS);
-    if (!snipMgrCat || !SNIPPETS[snipMgrCat]) snipMgrCat = cats[0] || null;
+    const data = snipDraft || {};
+    const cats = Object.keys(data);
+    if (!snipMgrCat || !data[snipMgrCat]) snipMgrCat = cats[0] || null;
 
     const sel = el('snipCatSelect');
     sel.innerHTML = '';
     cats.forEach((k) => {
       const opt = document.createElement('option');
       opt.value = k;
-      opt.textContent = SNIPPETS[k].label || k;
+      opt.textContent = data[k].label || k;
       sel.appendChild(opt);
     });
     if (snipMgrCat) sel.value = snipMgrCat;
-    el('snipCatLabel').value = snipMgrCat ? SNIPPETS[snipMgrCat].label || '' : '';
+    el('snipCatLabel').value = snipMgrCat ? data[snipMgrCat].label || '' : '';
 
     const list = el('snipItemList');
     list.innerHTML = '';
-    const items = snipMgrCat && SNIPPETS[snipMgrCat].items;
+    const items = snipMgrCat && data[snipMgrCat].items;
     if (!items || !items.length) {
       const empty = document.createElement('div');
       empty.className = 'snip-edit-empty';
@@ -1251,74 +1275,80 @@
       list.appendChild(empty);
       return;
     }
-    items.forEach((it, i) => {
+    items.forEach((it) => {
       const row = document.createElement('div');
       row.className = 'snip-edit-row';
+      row._item = it;
+
+      const handle = document.createElement('div');
+      handle.className = 'snip-drag';
+      handle.textContent = '\u2630';
+      handle.title = t('snip.manage.dragReorder');
+      handle.addEventListener('mousedown', () => {
+        row.draggable = true;
+      });
+      handle.addEventListener('mouseup', () => {
+        row.draggable = false;
+      });
+
+      row.addEventListener('dragstart', (e) => {
+        row.classList.add('dragging');
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+      });
+      row.addEventListener('dragend', () => {
+        row.draggable = false;
+        row.classList.remove('dragging');
+        commitSnipOrder();
+      });
+
       const labelIn = document.createElement('input');
       labelIn.type = 'text';
       labelIn.value = it.label || '';
       labelIn.placeholder = t('snip.manage.labelPh');
       labelIn.addEventListener('input', () => {
         it.label = labelIn.value;
-        persistSnippets(false);
+        markSnipDirty();
       });
+
       const textIn = document.createElement('textarea');
       textIn.value = it.text || '';
       textIn.rows = 2;
       textIn.spellcheck = false;
       textIn.addEventListener('input', () => {
         it.text = textIn.value;
-        persistSnippets(false);
+        markSnipDirty();
       });
+
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'btn-remove';
       del.textContent = '\u00d7';
+      del.title = t('snip.manage.delItem');
       del.addEventListener('click', () => {
-        SNIPPETS[snipMgrCat].items.splice(i, 1);
-        persistSnippets(true);
+        const arr = data[snipMgrCat].items;
+        const idx = arr.indexOf(it);
+        if (idx >= 0) arr.splice(idx, 1);
+        markSnipDirty();
         renderSnipManager();
       });
 
-      const moveItem = (from, to) => {
-        const arr = SNIPPETS[snipMgrCat].items;
-        if (to < 0 || to >= arr.length) return;
-        const [moved] = arr.splice(from, 1);
-        arr.splice(to, 0, moved);
-        persistSnippets(true);
-        renderSnipManager();
-      };
-      const up = document.createElement('button');
-      up.type = 'button';
-      up.className = 'snip-move';
-      up.textContent = '\u2191';
-      up.title = t('snip.manage.moveUp');
-      up.disabled = i === 0;
-      up.addEventListener('click', () => moveItem(i, i - 1));
-      const down = document.createElement('button');
-      down.type = 'button';
-      down.className = 'snip-move';
-      down.textContent = '\u2193';
-      down.title = t('snip.manage.moveDown');
-      down.disabled = i === items.length - 1;
-      down.addEventListener('click', () => moveItem(i, i + 1));
-
-      const actions = document.createElement('div');
-      actions.className = 'snip-row-actions';
-      actions.appendChild(up);
-      actions.appendChild(down);
-      actions.appendChild(del);
-
+      row.appendChild(handle);
       row.appendChild(labelIn);
       row.appendChild(textIn);
-      row.appendChild(actions);
+      row.appendChild(del);
       list.appendChild(row);
     });
   }
 
   function openSnipManager() {
-    snipMgrCat = Object.keys(SNIPPETS)[0] || null;
+    snipDraft = cloneSnippets(SNIPPETS);
+    snipDirty = false;
+    snipMgrCat = Object.keys(snipDraft)[0] || null;
     renderSnipManager();
+    updateSnipDirty();
+    el('snipNewCat').value = '';
+    el('snipNewLabel').value = '';
+    el('snipNewText').value = '';
     const dialog = el('snipManagerModal').querySelector('.modal');
     if (dialog) {
       // Re-center each open (keep any resized dimensions).
@@ -1328,6 +1358,61 @@
       dialog.style.margin = '';
     }
     el('snipManagerModal').classList.remove('hidden');
+  }
+
+  // Close the manager, optionally discarding staged (unsaved) edits.
+  function closeSnipManager(force) {
+    if (!force && snipDirty && !window.confirm(t('snip.manage.discardConfirm'))) return;
+    snipDraft = null;
+    snipDirty = false;
+    updateSnipDirty();
+    el('snipManagerModal').classList.add('hidden');
+  }
+
+  // Apply the staged draft to the live snippets, persist, and close.
+  function saveSnipManager() {
+    if (!snipDraft) {
+      el('snipManagerModal').classList.add('hidden');
+      return;
+    }
+    SNIPPETS = cloneSnippets(snipDraft);
+    persistSnippets(true);
+    snipDirty = false;
+    updateSnipDirty();
+    toast(t('snip.manage.saved'), 'success');
+    closeSnipManager(true);
+  }
+
+  // After a drag-and-drop, rebuild the active category's item order from the
+  // DOM order, then re-render to refresh row handlers.
+  function commitSnipOrder() {
+    if (!snipDraft || !snipMgrCat || !snipDraft[snipMgrCat]) return;
+    const list = el('snipItemList');
+    const rows = Array.prototype.slice.call(list.querySelectorAll('.snip-edit-row'));
+    const newItems = rows.map((r) => r._item).filter(Boolean);
+    const old = snipDraft[snipMgrCat].items;
+    if (newItems.length === old.length) {
+      const changed = newItems.some((x, idx) => x !== old[idx]);
+      snipDraft[snipMgrCat].items = newItems;
+      if (changed) markSnipDirty();
+    }
+    renderSnipManager();
+  }
+
+  // Find the row a dragged item should be inserted before, from the pointer Y.
+  function getSnipDragAfter(container, y) {
+    const els = Array.prototype.slice.call(
+      container.querySelectorAll('.snip-edit-row:not(.dragging)')
+    );
+    let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+    els.forEach((child) => {
+      const box = child.getBoundingClientRect();
+      const offset = y - box.top - box.height / 2;
+      if (offset < 0 && offset > closest.offset) {
+        closest = { offset, element: child };
+      }
+    });
+    return closest.element;
   }
 
   // Make a modal dialog draggable by a handle (e.g. its header).
@@ -1359,14 +1444,29 @@
     const modal = el('snipManagerModal');
     if (!modal) return;
     el('btnSnipManage').addEventListener('click', openSnipManager);
-    el('btnSnipManagerClose').addEventListener('click', () => modal.classList.add('hidden'));
+    el('btnSnipManagerClose').addEventListener('click', () => closeSnipManager(false));
+    el('btnSnipCancel').addEventListener('click', () => closeSnipManager(false));
+    el('btnSnipSave').addEventListener('click', saveSnipManager);
     modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.classList.add('hidden');
+      if (e.target === modal) closeSnipManager(false);
     });
 
     const dialog = modal.querySelector('.modal');
     const head = dialog && dialog.querySelector('.modal-head');
     if (dialog && head) makeModalDraggable(dialog, head);
+
+    // Live-reorder rows while dragging one by its handle.
+    const listEl = el('snipItemList');
+    listEl.addEventListener('dragover', (e) => {
+      const dragging = listEl.querySelector('.snip-edit-row.dragging');
+      if (!dragging) return;
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      const after = getSnipDragAfter(listEl, e.clientY);
+      if (after == null) listEl.appendChild(dragging);
+      else if (after !== dragging) listEl.insertBefore(dragging, after);
+    });
+    listEl.addEventListener('drop', (e) => e.preventDefault());
 
     el('snipCatSelect').addEventListener('change', () => {
       snipMgrCat = el('snipCatSelect').value;
@@ -1374,36 +1474,37 @@
     });
 
     el('snipCatLabel').addEventListener('input', () => {
-      if (snipMgrCat && SNIPPETS[snipMgrCat]) {
-        SNIPPETS[snipMgrCat].label = el('snipCatLabel').value;
+      if (snipDraft && snipMgrCat && snipDraft[snipMgrCat]) {
+        snipDraft[snipMgrCat].label = el('snipCatLabel').value;
         const opt = el('snipCatSelect').querySelector('option[value="' + snipMgrCat + '"]');
         if (opt) opt.textContent = el('snipCatLabel').value || snipMgrCat;
-        persistSnippets(false);
+        markSnipDirty();
       }
     });
 
     el('btnSnipAddCat').addEventListener('click', () => {
+      if (!snipDraft) return;
       const name = el('snipNewCat').value.trim();
       if (!name) return;
       const key = 'cat_' + Date.now().toString(36);
-      SNIPPETS[key] = { label: name, items: [] };
+      snipDraft[key] = { label: name, items: [] };
       el('snipNewCat').value = '';
       snipMgrCat = key;
-      persistSnippets(true);
+      markSnipDirty();
       renderSnipManager();
     });
 
     el('btnSnipDelCat').addEventListener('click', () => {
-      if (!snipMgrCat) return;
+      if (!snipDraft || !snipMgrCat) return;
       if (!window.confirm(t('snip.manage.delCatConfirm'))) return;
-      delete SNIPPETS[snipMgrCat];
-      snipMgrCat = Object.keys(SNIPPETS)[0] || null;
-      persistSnippets(true);
+      delete snipDraft[snipMgrCat];
+      snipMgrCat = Object.keys(snipDraft)[0] || null;
+      markSnipDirty();
       renderSnipManager();
     });
 
     el('btnSnipAddItem').addEventListener('click', () => {
-      if (!snipMgrCat) {
+      if (!snipDraft || !snipMgrCat) {
         toast(t('snip.manage.needCat'), 'error');
         return;
       }
@@ -1414,12 +1515,11 @@
       }
       let label = el('snipNewLabel').value.trim();
       if (!label) label = firstLineLabel(text);
-      SNIPPETS[snipMgrCat].items.push({ label, text });
+      snipDraft[snipMgrCat].items.push({ label, text });
       el('snipNewLabel').value = '';
       el('snipNewText').value = '';
-      persistSnippets(true);
+      markSnipDirty();
       renderSnipManager();
-      toast(t('snip.manage.added'), 'success');
     });
   }
 

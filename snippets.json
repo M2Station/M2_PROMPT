@@ -3,8 +3,8 @@
     "label": "功能",
     "items": [
       {
-        "label": "角色設定",
-        "text": "You are an expert assistant. "
+        "label": "PR",
+        "text": "CREATE PR."
       },
       {
         "label": "送出",
@@ -25,10 +25,6 @@
       {
         "label": "限制條件",
         "text": "限制條件：\n- "
-      },
-      {
-        "label": "PR",
-        "text": "CREATE PR."
       },
       {
         "label": "範例",
