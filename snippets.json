@@ -12,11 +12,11 @@
       },
       {
         "label": "發布",
-        "text": "PR-based CI release - bump to next version, open & merge PR,, then tag , push tag; CI builds & publishes. Matches repo history.\nex. 0.3.0 > 0.3.1 , 0.3.9 > 0.4.0\n"
+        "text": "PR-based CI release - bump to next version, open & merge PR,, then tag , push tag; CI builds & publishes. Matches repo history.\nex. 0.3.0 > 0.3.1 , 0.3.9 > 0.4.0"
       },
       {
         "label": "任務目標",
-        "text": "任務目標：\n"
+        "text": "任務目標：必須達成\n"
       },
       {
         "label": "步驟拆解",
@@ -24,11 +24,11 @@
       },
       {
         "label": "輸出格式",
-        "text": "用MARKDOWN格式輸出：\n用表格格式輸出:\n用MARKDOWN表格輸出:\n"
+        "text": "用MARKDOWN格式輸出：\n用表格格式輸出:\n用MARKDOWN表格輸出:"
       },
       {
         "label": "限制條件",
-        "text": "限制條件：\n- "
+        "text": "限制條件："
       }
     ]
   },
@@ -37,7 +37,7 @@
     "items": [
       {
         "label": "效能範本",
-        "text": "# 效能分析\n對象：<要最佳化的程式 / 流程>\n\n## 現況\n<目前的效能數據或情境>\n\n## 待分析\n- 時間複雜度：\n- 空間複雜度：\n- 主要瓶頸：\n\n## 需求\n請提出具體最佳化方案，附上預期改善幅度與取捨。\n"
+        "text": "# 效能分析\n開始分析最佳化程式流程與啟動速度, 運行速度, 使用者體驗\n提供修改優先權還有可以優化的項目 , 以P1.x/P2.x/P3.x 這種方式推薦以及讓我選擇\n\n## 現況\n<目前的效能數據或情境>\n\n## 待分析\n- 時間複雜度：\n- 空間複雜度：\n- 主要瓶頸：\n\n## 需求\n請提出具體最佳化方案，附上預期改善幅度與取捨。\n"
       },
       {
         "label": "最佳化",
@@ -95,7 +95,7 @@
     "items": [
       {
         "label": "閉迴範本",
-        "text": "# 迭代回饋\n## 上一輪輸出\n<貼上上一輪結果>\n\n## 評估\n- 是否符合需求：<是 / 否，說明>\n- 問題點：<列出問題>\n\n## 本輪要求\n請根據以上回饋修正，並：\n1. 說明調整了哪些地方\n2. 重新輸出完整結果\n3. 自我檢查是否已解決問題\n"
+        "text": "# 迭代回饋\n#我的目標 : \n## 依照上一輪AGENT輸出跟回饋\n\n## 評估\n- 是否符合需求還有更靠近我的要求\n- 問題點：列出問題\n\n## 本輪要求\n請根據以上回饋修正，並：\n1. 說明調整了哪些地方\n2. 重新輸出完整結果\n3. 自我檢查是否已解決問題\n"
       },
       {
         "label": "依回饋修正",
