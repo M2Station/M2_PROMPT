@@ -102,6 +102,10 @@ Use `npm run dist:x64` / `npm run dist:arm64` to build a single architecture, or
 x64 machine — electron-builder downloads the matching Electron binaries
 automatically.
 
+> 🚀 To cut a versioned GitHub Release — installers are built and attached to the
+> **Releases** page automatically when you push a `v*` tag — see
+> [docs/RELEASE.md](docs/RELEASE.md).
+
 ## 🗂️ Project structure
 
 ```
@@ -111,6 +115,8 @@ src/
   renderer/  index.html, css/styles.css, js/{app,themes}.js, i18n/{en,zh}.json
 snippets.json  built-in snippet palettes (editable via ⚙ SNIPPET Settings)
 scripts/     repair-electron.ps1 (rebuilds a half-installed Electron binary)
+docs/        RELEASE.md (versioned GitHub Release guide)
+.github/     CI workflows (build sanity check / tag-triggered release)
 M2_PROMPT.cmd        launcher (auto-installs Node + deps, then npm start)
 M2_PROMPT_Admin.cmd  same launcher, self-elevated via UAC
 package.json electron + electron-builder
@@ -227,6 +233,9 @@ npm run dist
 則只產生未封裝的版本。在 x64 機器上也能順利交叉編譯出 ARM64 版本 —
 electron-builder 會自動下載對應的 Electron 二進位檔。
 
+> 🚀 要發佈帶版號的 GitHub Release（推送 `v*` tag 後會自動建置安裝檔並附到
+> **Releases** 頁面），請參考 [docs/RELEASE.md](docs/RELEASE.md)。
+
 ## 🗂️ 專案結構
 
 ```
@@ -236,6 +245,8 @@ src/
   renderer/  index.html、css/styles.css、js/{app,themes}.js、i18n/{en,zh}.json
 snippets.json  內建片語面板（可透過 ⚙ SNIPPET 設定 編輯）
 scripts/     repair-electron.ps1（修復未安裝完成的 Electron 二進位檔）
+docs/        RELEASE.md（帶版號的 GitHub Release 發版指南）
+.github/     CI 工作流程（build 健檢／tag 觸發的 release）
 M2_PROMPT.cmd        啟動器（自動裝 Node 與相依套件，然後 npm start）
 M2_PROMPT_Admin.cmd  同上但經由 UAC 自動提權
 package.json electron + electron-builder
