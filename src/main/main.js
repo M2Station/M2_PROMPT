@@ -15,6 +15,27 @@ const { registerIpc } = require('./ipc');
 
 let mainWindow = null;
 
+// Folder passed on the command line (e.g. from the Explorer right-click menu
+// -> "M2_PROMPT.exe" "%1"). Captured at startup so the renderer can pull it once
+// it has finished booting, and re-sent to the live window on a second launch.
+let initialFolder = null;
+
+// Pick the first CLI argument that is an existing directory. In development the
+// first two argv entries are electron.exe + the app path ('.'), so skip them;
+// a packaged build only has the exe in front. Validating isDirectory() keeps
+// flags and the exe path itself from being mistaken for a folder.
+function folderArgFrom(argv) {
+  const args = (argv || []).slice(app.isPackaged ? 1 : 2);
+  for (const a of args) {
+    try {
+      if (a && fs.existsSync(a) && fs.statSync(a).isDirectory()) return a;
+    } catch (_e) {
+      /* not a readable path - ignore */
+    }
+  }
+  return null;
+}
+
 // Background color shown the instant the window appears (before the renderer
 // paints). Cached from the user's last theme so dark-theme users don't get a
 // white flash. Falls back to the default "Daylight" light background.
@@ -75,16 +96,35 @@ function applyEditMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-app.whenReady().then(() => {
-  if (process.platform === 'win32') app.setAppUserModelId('com.m2station.m2prompt');
-  applyEditMenu();
-  registerIpc();
-  createWindow();
+// Single-instance: if M2_PROMPT is already running, hand the right-clicked
+// folder to the existing window instead of spawning a duplicate (which would
+// otherwise fight over the same settings / localStorage).
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  initialFolder = folderArgFrom(process.argv);
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  app.on('second-instance', (_e, argv) => {
+    const folder = folderArgFrom(argv);
+    if (!mainWindow) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    if (folder && mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send('app:openProjectFolder', folder);
+    }
   });
-});
+
+  app.whenReady().then(() => {
+    if (process.platform === 'win32') app.setAppUserModelId('com.m2station.m2prompt');
+    applyEditMenu();
+    registerIpc({ getInitialFolder: () => initialFolder });
+    createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    });
+  });
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

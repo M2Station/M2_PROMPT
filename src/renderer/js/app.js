@@ -813,23 +813,13 @@
   // ------------------------------------------------------------------
   // Open an exported project folder for editing
   // ------------------------------------------------------------------
-  async function openProjectFolder() {
-    let res;
-    try {
-      res = await api.openProject();
-    } catch (e) {
-      toast(t('toast.openErr') + e.message, 'error');
-      return;
-    }
-    if (!res || res.canceled) return;
-    if (!res.ok) {
-      toast(t('toast.openErr') + (res.error || ''), 'error');
-      return;
-    }
-    const d = res.project || {};
-    if (!Array.isArray(d.sections) || !d.sections.length) {
+
+  // Turn loaded project data (from the dialog or an Explorer hand-off) into a
+  // new in-app project tab. Returns false when the folder held no sections.
+  function applyLoadedProject(d) {
+    if (!d || !Array.isArray(d.sections) || !d.sections.length) {
       toast(t('toast.openEmpty'), 'error');
-      return;
+      return false;
     }
 
     const proj = newProject();
@@ -859,6 +849,41 @@
     saveState();
     renderAll();
     toast(t('toast.openOk'), 'success');
+    return true;
+  }
+
+  async function openProjectFolder() {
+    let res;
+    try {
+      res = await api.openProject();
+    } catch (e) {
+      toast(t('toast.openErr') + e.message, 'error');
+      return;
+    }
+    if (!res || res.canceled) return;
+    if (!res.ok) {
+      toast(t('toast.openErr') + (res.error || ''), 'error');
+      return;
+    }
+    applyLoadedProject(res.project || {});
+  }
+
+  // Auto-open a specific exported folder handed over by the Explorer
+  // right-click menu (on launch, or from a later launch while already open).
+  async function openProjectByPath(dir) {
+    if (!dir || typeof api.openProjectPath !== 'function') return;
+    let res;
+    try {
+      res = await api.openProjectPath(dir);
+    } catch (e) {
+      toast(t('toast.openErr') + e.message, 'error');
+      return;
+    }
+    if (!res || !res.ok) {
+      toast(t('toast.openErr') + ((res && res.error) || ''), 'error');
+      return;
+    }
+    applyLoadedProject(res.project || {});
   }
 
   // ------------------------------------------------------------------
@@ -1659,6 +1684,18 @@
     wireSplitter('splitter', '.layout', '--left-width', 'leftWidth', 260, 640);
 
     await loadLang(state.lang || 'zh');
+
+    // Explorer right-click hand-off: open the folder passed on launch, and keep
+    // listening for folders sent by later launches while this window is open.
+    if (typeof api.onOpenProjectFolder === 'function') {
+      api.onOpenProjectFolder((dir) => openProjectByPath(dir));
+    }
+    try {
+      const cliFolder = typeof api.getInitialFolder === 'function' ? await api.getInitialFolder() : null;
+      if (cliFolder) await openProjectByPath(cliFolder);
+    } catch (_e) {
+      /* no initial folder - normal launch */
+    }
   }
 
   if (document.readyState === 'loading') {

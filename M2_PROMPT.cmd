@@ -37,7 +37,9 @@ echo [INFO] Starting M2 PROMPT ...
 if exist "%ELECTRON%" (
     REM Launch the Electron GUI exe directly and detached, so the launcher
     REM console window closes instead of lingering for the app's lifetime.
-    start "" "%ELECTRON%" "%~dp0."
+    REM Forward any extra args (e.g. a folder passed by the Explorer right-click
+    REM menu) so the app can auto-open that folder as a project.
+    start "" "%ELECTRON%" "%~dp0." %*
 ) else (
     echo [ERROR] Electron is still not installed correctly.
     echo         Fix it manually from this folder, then run again:

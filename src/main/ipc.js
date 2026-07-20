@@ -281,8 +281,20 @@ function writeProjectInto(dir, info) {
 // IPC registration
 // ---------------------------------------------------------------------------
 
-function registerIpc() {
+function registerIpc(options) {
+  const opts = options || {};
+
   ipcMain.handle('app:version', () => app.getVersion());
+
+  // Folder handed to the app on launch by the Explorer right-click menu. The
+  // renderer pulls this once on boot and auto-opens it as a project.
+  ipcMain.handle('app:getInitialFolder', () => {
+    try {
+      return typeof opts.getInitialFolder === 'function' ? opts.getInitialFolder() : null;
+    } catch (_e) {
+      return null;
+    }
+  });
 
   ipcMain.handle('app:setStartupBg', (_e, color) => {
     try {
@@ -351,6 +363,23 @@ function registerIpc() {
         : await dialog.showOpenDialog(opts);
       if (res.canceled || !res.filePaths.length) return { canceled: true };
       const dir = res.filePaths[0];
+      const project = readProjectFolder(dir);
+      return {
+        ok: true,
+        project: Object.assign({}, project, { sourcePath: dir, parentPath: path.dirname(dir) }),
+      };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Open a specific exported project folder by path (no dialog). Used to auto-
+  // open the folder handed over by the Explorer right-click menu.
+  ipcMain.handle('project:openPath', (_e, dir) => {
+    try {
+      if (!dir || !path.isAbsolute(dir) || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) {
+        return { ok: false, error: 'INVALID_PATH' };
+      }
       const project = readProjectFolder(dir);
       return {
         ok: true,
