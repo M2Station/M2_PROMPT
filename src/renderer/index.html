@@ -10,7 +10,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self';"
+      content="default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self';"
     />
     <title>M2 PROMPT</title>
     <link rel="stylesheet" href="css/styles.css" />
@@ -178,6 +178,13 @@
               <div class="tabs" id="sectionTabs"></div>
               <div class="log-tools">
                 <span class="counter" id="counter">0 行 · 0 字元</span>
+                <button class="btn btn-ghost btn-sm btn-preview" id="btnPreview" title="即見所得 / 原始碼">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  <span class="btn-preview-label">即見所得</span>
+                </button>
                 <button class="btn btn-ghost btn-sm btn-font" id="btnFontDown" data-i18n-title="btn.fontDown.title" title="縮小編輯區字體 (Ctrl -)">A-</button>
                 <button class="btn btn-ghost btn-sm btn-font" id="btnFontUp" data-i18n-title="btn.fontUp.title" title="放大編輯區字體 (Ctrl +)">A+</button>
                 <button class="btn btn-ghost btn-sm" id="btnExportSingle" data-i18n-title="btn.exportSingle.title" title="只輸出目前這個分頁">
@@ -320,6 +327,7 @@
       </div>
     </div>
 
+    <script src="js/markdown.js"></script>
     <script src="js/app.js"></script>
   </body>
 </html>

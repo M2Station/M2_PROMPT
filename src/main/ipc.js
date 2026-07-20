@@ -10,7 +10,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const { ipcMain, app, shell, dialog, BrowserWindow, nativeImage } = require('electron');
+const { ipcMain, app, shell, dialog, BrowserWindow, nativeImage, clipboard } = require('electron');
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -33,6 +33,28 @@ function resolveOutputRoot(outputBase) {
   const base = (outputBase || '').trim();
   if (base && path.isAbsolute(base)) return base;
   return defaultOutputRoot();
+}
+
+// Whitelist of image MIME types we accept on paste, mapped to a file extension.
+const IMAGE_EXT = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/jpg': 'jpg',
+  'image/gif': 'gif',
+  'image/webp': 'webp',
+  'image/bmp': 'bmp',
+  'image/svg+xml': 'svg',
+};
+
+// The folder that holds a project's files (where its img/ subfolder lives). For
+// a project opened/saved from disk that is its sourcePath; otherwise it is
+// derived from the output root + the project-name abbreviation, matching where
+// an export would land so pasted images sit next to the prompt predictably.
+function imageBaseDir(desc) {
+  const d = desc || {};
+  if (d.sourcePath && path.isAbsolute(d.sourcePath)) return d.sourcePath;
+  const abbr = abbreviate(d.projectName, d.abbrevLen);
+  return path.join(resolveOutputRoot(d.outputBase), abbr);
 }
 
 // ---------------------------------------------------------------------------
@@ -399,6 +421,114 @@ function registerIpc(options) {
       if (!fs.existsSync(dir)) return { ok: false, error: 'MISSING' };
       const files = writeProjectInto(dir, info);
       return { ok: true, path: dir, files };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Save a pasted / dropped image into <project>/img and return its relative
+  // path so the renderer can insert ![](img/<name>) into the Markdown.
+  ipcMain.handle('image:save', (_e, payload) => {
+    try {
+      const p = payload || {};
+      const ext = IMAGE_EXT[String(p.mime || '').toLowerCase()] || 'png';
+      if (!p.data) return { ok: false, error: 'NO_DATA' };
+      const buf = Buffer.from(p.data);
+      if (!buf.length) return { ok: false, error: 'EMPTY' };
+      if (buf.length > 50 * 1024 * 1024) return { ok: false, error: 'TOO_LARGE' };
+      const dir = path.join(imageBaseDir(p), 'img');
+      ensureDir(dir);
+      const d = new Date();
+      const ts = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+      const rand = Math.random().toString(36).slice(2, 6);
+      const stem = String(p.name || '').trim().replace(/\.[^.]*$/, '').replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '');
+      const fname = `${stem ? stem + '-' : 'pasted-'}${ts}-${rand}.${ext}`;
+      fs.writeFileSync(path.join(dir, fname), buf);
+      return { ok: true, rel: `img/${fname}` };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Read an image (relative to the project's img base) and return a data URL so
+  // the preview can display it (the renderer's CSP blocks file: URLs).
+  ipcMain.handle('image:readDataUrl', (_e, payload) => {
+    try {
+      const p = payload || {};
+      const rel = String(p.rel || '').replace(/\\/g, '/');
+      if (!rel || rel.indexOf('..') !== -1 || path.isAbsolute(rel)) return { ok: false, error: 'BAD_PATH' };
+      const baseDir = path.resolve(imageBaseDir(p));
+      const abs = path.resolve(baseDir, rel);
+      if (abs !== baseDir && !abs.startsWith(baseDir + path.sep)) return { ok: false, error: 'OUTSIDE' };
+      if (!fs.existsSync(abs) || !fs.statSync(abs).isFile()) return { ok: false, error: 'MISSING' };
+      const ext = path.extname(abs).toLowerCase().slice(1);
+      const mime = Object.keys(IMAGE_EXT).find((k) => IMAGE_EXT[k] === ext) || 'image/png';
+      const b64 = fs.readFileSync(abs).toString('base64');
+      return { ok: true, dataUrl: `data:${mime};base64,${b64}` };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Shared guard: resolve a project-relative image path to an absolute path that
+  // must stay inside the project's img base. Returns null when invalid.
+  function resolveImageAbs(p) {
+    const rel = String((p && p.rel) || '').replace(/\\/g, '/');
+    if (!rel || rel.indexOf('..') !== -1 || path.isAbsolute(rel)) return null;
+    const baseDir = path.resolve(imageBaseDir(p));
+    const abs = path.resolve(baseDir, rel);
+    if (abs !== baseDir && !abs.startsWith(baseDir + path.sep)) return null;
+    return abs;
+  }
+
+  // Copy an image file to the OS clipboard (so it can be pasted anywhere).
+  ipcMain.handle('image:copyToClipboard', (_e, payload) => {
+    try {
+      const abs = resolveImageAbs(payload);
+      if (!abs) return { ok: false, error: 'BAD_PATH' };
+      if (!fs.existsSync(abs)) return { ok: false, error: 'MISSING' };
+      let img = nativeImage.createFromPath(abs);
+      if (img.isEmpty()) {
+        try {
+          img = nativeImage.createFromBuffer(fs.readFileSync(abs));
+        } catch (_e) {
+          /* keep the empty image; reported below */
+        }
+      }
+      if (img.isEmpty()) return { ok: false, error: 'EMPTY' };
+      clipboard.writeImage(img);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Delete an image file and return its bytes (base64) so the renderer can
+  // offer Ctrl+Z undo (restore).
+  ipcMain.handle('image:delete', (_e, payload) => {
+    try {
+      const abs = resolveImageAbs(payload);
+      if (!abs) return { ok: false, error: 'BAD_PATH' };
+      let base64 = null;
+      if (fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+        base64 = fs.readFileSync(abs).toString('base64');
+        fs.unlinkSync(abs);
+      }
+      return { ok: true, base64 };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Restore a previously deleted image (used by Ctrl+Z undo).
+  ipcMain.handle('image:restore', (_e, payload) => {
+    try {
+      const abs = resolveImageAbs(payload);
+      if (!abs) return { ok: false, error: 'BAD_PATH' };
+      if (!payload || !payload.base64) return { ok: false, error: 'NO_DATA' };
+      ensureDir(path.dirname(abs));
+      fs.writeFileSync(abs, Buffer.from(payload.base64, 'base64'));
+      return { ok: true };
     } catch (err) {
       return { ok: false, error: String(err && err.message ? err.message : err) };
     }

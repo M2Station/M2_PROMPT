@@ -31,5 +31,10 @@ contextBridge.exposeInMainWorld('m2prompt', {
   loadSnippets: () => ipcRenderer.invoke('snippets:load'),
   saveSnippets: (data) => ipcRenderer.invoke('snippets:save', data),
   openSnippetsFile: () => ipcRenderer.invoke('snippets:openFile'),
+  saveImage: (payload) => ipcRenderer.invoke('image:save', payload),
+  readImageDataUrl: (payload) => ipcRenderer.invoke('image:readDataUrl', payload),
+  copyImageToClipboard: (payload) => ipcRenderer.invoke('image:copyToClipboard', payload),
+  deleteImage: (payload) => ipcRenderer.invoke('image:delete', payload),
+  restoreImage: (payload) => ipcRenderer.invoke('image:restore', payload),
   loadI18n: (lang) => ipcRenderer.invoke('i18n:load', lang),
 });

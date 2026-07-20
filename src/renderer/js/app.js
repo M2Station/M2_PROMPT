@@ -56,6 +56,7 @@
       usePrefix: false,
       outputBase: '',
       editorFontSize: 13,
+      previewMode: false,
       projects: [p],
       activeProjectId: p.id,
     };
@@ -223,8 +224,11 @@
   function setEditorFont(size) {
     const next = Math.max(10, Math.min(28, Math.round(size)));
     state.editorFontSize = next;
-    const ta = el('sectionBody') && el('sectionBody').querySelector('.log-input');
+    const body = el('sectionBody');
+    const ta = body && body.querySelector('.log-input');
     if (ta) ta.style.fontSize = next + 'px';
+    const pv = body && body.querySelector('.md-preview');
+    if (pv) pv.style.fontSize = next + 'px';
     saveState();
   }
 
@@ -556,6 +560,8 @@
     body.innerHTML = '';
     if (!s) return;
 
+    const preview = state.previewMode === true;
+
     const pane = document.createElement('div');
     pane.className = 'log-pane active';
 
@@ -563,6 +569,7 @@
     ta.className = 'log-input';
     ta.value = s.content || '';
     ta.style.fontSize = editorFontPx() + 'px';
+    ta.style.display = preview ? 'none' : '';
     ta.placeholder =
       lang === 'zh'
         ? `在此輸入「${s.name}」的 Prompt 內容…`
@@ -574,29 +581,604 @@
       saveState();
       refreshSectionTabDirty();
     });
-    ta.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    ta.addEventListener('keydown', (e) => handleEditorKeydown(e, ta));
+    ta.addEventListener('paste', (e) => handleEditorPaste(e, ta));
+    pane.appendChild(ta);
+
+    // WYSIWYG (Typora-like) editable view: each block renders inline and turns
+    // into its Markdown source when you click into it.
+    const wysBox = document.createElement('div');
+    wysBox.className = 'md-preview md-wys';
+    wysBox.style.fontSize = editorFontPx() + 'px';
+    wysBox.style.display = preview ? '' : 'none';
+    wysBox.addEventListener('contextmenu', (e) => {
+      const img = e.target && e.target.closest ? e.target.closest('img') : null;
+      if (img && img.dataset && img.dataset.rel) {
         e.preventDefault();
-        doExport();
-        return;
-      }
-      if (e.ctrlKey || e.metaKey) {
-        if (e.key === '=' || e.key === '+') {
-          e.preventDefault();
-          bumpEditorFont(1);
-        } else if (e.key === '-' || e.key === '_') {
-          e.preventDefault();
-          bumpEditorFont(-1);
-        } else if (e.key === '0') {
-          e.preventDefault();
-          setEditorFont(13);
-        }
+        showImageContextMenu(e.clientX, e.clientY, img);
       }
     });
+    pane.appendChild(wysBox);
 
-    pane.appendChild(ta);
     body.appendChild(pane);
     el('counter').textContent = counterText(s.content || '');
+
+    if (preview) renderWysiwyg(wysBox, s, imageDescriptor(p));
+    updatePreviewToggle();
+  }
+
+  // ------------------------------------------------------------------
+  // Editor helpers: WYSIWYG preview, Typora-style shortcuts, image paste
+  // ------------------------------------------------------------------
+  function activeEditorTextarea() {
+    return el('sectionBody') && el('sectionBody').querySelector('.log-input');
+  }
+
+  // Describes where this project's files (and its img/ folder) live, so the
+  // main process can save / read pasted images in the right place.
+  function imageDescriptor(p) {
+    const proj = p || activeProject();
+    return {
+      sourcePath: proj.sourcePath || '',
+      outputBase: state.outputBase || '',
+      projectName: (proj.fields && proj.fields.projectName) || '',
+      abbrevLen: state.abbrevLen,
+    };
+  }
+
+  function updatePreviewToggle() {
+    const bp = el('btnPreview');
+    if (!bp) return;
+    const on = state.previewMode === true;
+    bp.classList.toggle('active', on);
+    const lbl = bp.querySelector('.btn-preview-label');
+    if (lbl) lbl.textContent = on ? t('btn.edit') : t('btn.preview');
+    bp.title = on ? t('btn.edit.title') : t('btn.preview.title');
+  }
+
+  // Insert text at the caret, joining the textarea's native undo stack so
+  // Ctrl+Z reverts it. The resulting 'input' event syncs content / counter.
+  function insertIntoEditor(ta, text) {
+    ta.focus();
+    let ok = false;
+    try {
+      ok = document.execCommand('insertText', false, text);
+    } catch (_e) {
+      ok = false;
+    }
+    if (!ok) {
+      const start = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
+      const end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : ta.value.length;
+      ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+      const caret = start + text.length;
+      ta.selectionStart = ta.selectionEnd = caret;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+
+  // Wrap the selection with markers (bold / italic / code / strike). Toggles
+  // the markers off when the selection is already wrapped.
+  function wrapSelection(ta, before, after, placeholder) {
+    const start = ta.selectionStart;
+    const end = ta.selectionEnd;
+    const sel = ta.value.slice(start, end);
+    if (sel && ta.value.slice(start - before.length, start) === before && ta.value.slice(end, end + after.length) === after) {
+      ta.selectionStart = start - before.length;
+      ta.selectionEnd = end + after.length;
+      insertIntoEditor(ta, sel);
+      return;
+    }
+    const inner = sel || placeholder || '';
+    insertIntoEditor(ta, before + inner + after);
+    const from = start + before.length;
+    ta.selectionStart = from;
+    ta.selectionEnd = from + inner.length;
+  }
+
+  function insertLink(ta) {
+    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    const text = sel || (lang === 'zh' ? '連結文字' : 'link text');
+    const startPos = ta.selectionStart;
+    insertIntoEditor(ta, `[${text}](url)`);
+    const urlStart = startPos + 1 + text.length + 2;
+    ta.selectionStart = urlStart;
+    ta.selectionEnd = urlStart + 3;
+  }
+
+  function insertCodeBlock(ta) {
+    const sel = ta.value.slice(ta.selectionStart, ta.selectionEnd);
+    const startPos = ta.selectionStart;
+    insertIntoEditor(ta, '```\n' + (sel || '') + '\n```');
+    if (!sel) {
+      const caret = startPos + 4;
+      ta.selectionStart = ta.selectionEnd = caret;
+    }
+  }
+
+  // Line-based helpers operate on the caret line (start..end of that line).
+  function caretLineRange(ta) {
+    const val = ta.value;
+    const ls = val.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+    let le = val.indexOf('\n', ta.selectionStart);
+    if (le === -1) le = val.length;
+    return { ls, le, line: val.slice(ls, le) };
+  }
+
+  function setHeadingLine(ta, level) {
+    const { ls, le, line } = caretLineRange(ta);
+    const indent = (line.match(/^(\s*)/) || ['', ''])[1];
+    const bare = line.slice(indent.length).replace(/^#{1,6}\s+/, '');
+    const isSame = new RegExp('^\\s*#{' + level + '}\\s+').test(line);
+    const newLine = isSame ? indent + bare : indent + '#'.repeat(level) + ' ' + bare;
+    ta.selectionStart = ls;
+    ta.selectionEnd = le;
+    insertIntoEditor(ta, newLine);
+    ta.selectionStart = ta.selectionEnd = ls + newLine.length;
+  }
+
+  function toggleLinePrefix(ta, prefix) {
+    const { ls, le, line } = caretLineRange(ta);
+    const indent = (line.match(/^(\s*)/) || ['', ''])[1];
+    const rest = line.slice(indent.length);
+    let newLine;
+    if (rest.startsWith(prefix)) {
+      newLine = indent + rest.slice(prefix.length);
+    } else {
+      newLine = indent + prefix + rest.replace(/^([-*+]\s+|>\s+|\d+[.)]\s+)/, '');
+    }
+    ta.selectionStart = ls;
+    ta.selectionEnd = le;
+    insertIntoEditor(ta, newLine);
+    ta.selectionStart = ta.selectionEnd = ls + newLine.length;
+  }
+
+  // Enter inside a list continues it (next bullet / number); Enter on an empty
+  // item ends the list. Returns true when it handled the key.
+  function handleEnterList(ta) {
+    if (ta.selectionStart !== ta.selectionEnd) return false;
+    const { ls, line } = caretLineRange(ta);
+    const consumed = line.slice(0, ta.selectionStart - ls);
+    const m = consumed.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
+    if (!m) return false;
+    const indent = m[1];
+    const marker = m[2];
+    const rest = m[3];
+    if (rest.trim() === '') {
+      ta.selectionStart = ls;
+      ta.selectionEnd = ls + consumed.length;
+      insertIntoEditor(ta, indent);
+      return true;
+    }
+    let nextMarker = marker;
+    if (/^\d+[.)]$/.test(marker)) {
+      nextMarker = parseInt(marker, 10) + 1 + marker.slice(-1);
+    }
+    insertIntoEditor(ta, '\n' + indent + nextMarker + ' ');
+    return true;
+  }
+
+  function indentSelection(ta, outdent) {
+    if (ta.selectionStart === ta.selectionEnd && !outdent) {
+      insertIntoEditor(ta, '  ');
+      return;
+    }
+    const val = ta.value;
+    const ls = val.lastIndexOf('\n', ta.selectionStart - 1) + 1;
+    let le = val.indexOf('\n', ta.selectionEnd);
+    if (le === -1) le = val.length;
+    const block = val.slice(ls, le);
+    const newBlock = block
+      .split('\n')
+      .map((ln) => (outdent ? ln.replace(/^ {1,2}|^\t/, '') : '  ' + ln))
+      .join('\n');
+    ta.selectionStart = ls;
+    ta.selectionEnd = le;
+    insertIntoEditor(ta, newBlock);
+    ta.selectionStart = ls;
+    ta.selectionEnd = ls + newBlock.length;
+  }
+
+  function handleEditorKeydown(e, ta) {
+    const mod = e.ctrlKey || e.metaKey;
+
+    if (mod && e.key === 'Enter') {
+      e.preventDefault();
+      doExport();
+      return;
+    }
+
+    if (mod && !e.shiftKey && !e.altKey) {
+      if (e.key === '=' || e.key === '+') { e.preventDefault(); bumpEditorFont(1); return; }
+      if (e.key === '-' || e.key === '_') { e.preventDefault(); bumpEditorFont(-1); return; }
+      if (e.key === '0') { e.preventDefault(); setEditorFont(13); return; }
+    }
+
+    // Typora-style formatting shortcuts.
+    if (mod && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (!e.shiftKey && k === 'b') { e.preventDefault(); wrapSelection(ta, '**', '**', lang === 'zh' ? '粗體' : 'bold'); return; }
+      if (!e.shiftKey && k === 'i') { e.preventDefault(); wrapSelection(ta, '*', '*', lang === 'zh' ? '斜體' : 'italic'); return; }
+      if (!e.shiftKey && e.key === '`') { e.preventDefault(); wrapSelection(ta, '`', '`', 'code'); return; }
+      if (e.shiftKey && k === 'x') { e.preventDefault(); wrapSelection(ta, '~~', '~~', lang === 'zh' ? '刪除線' : 'strike'); return; }
+      if (!e.shiftKey && k === 'k') { e.preventDefault(); insertLink(ta); return; }
+      if (e.shiftKey && k === 'c') { e.preventDefault(); insertCodeBlock(ta); return; }
+      if (!e.shiftKey && /^[1-6]$/.test(e.key)) { e.preventDefault(); setHeadingLine(ta, parseInt(e.key, 10)); return; }
+      if (e.shiftKey && k === 'q') { e.preventDefault(); toggleLinePrefix(ta, '> '); return; }
+      if (e.shiftKey && k === 'l') { e.preventDefault(); toggleLinePrefix(ta, '- '); return; }
+    }
+
+    if (!mod && !e.shiftKey && !e.altKey && e.key === 'Enter' && !e.isComposing) {
+      if (handleEnterList(ta)) { e.preventDefault(); return; }
+    }
+
+    if (e.key === 'Tab' && !mod && !e.altKey) {
+      e.preventDefault();
+      indentSelection(ta, e.shiftKey);
+    }
+  }
+
+  // Pull an image blob from a paste event's clipboard, or null for non-images.
+  function extractImageFromClipboard(e) {
+    const dt = e.clipboardData;
+    if (!dt) return null;
+    const items = dt.items ? Array.from(dt.items) : [];
+    const imgItem = items.find((it) => it.kind === 'file' && it.type && it.type.indexOf('image/') === 0);
+    if (imgItem) {
+      const blob = imgItem.getAsFile();
+      if (blob) return { blob, mime: imgItem.type };
+    }
+    if (dt.files && dt.files.length) {
+      const f = Array.from(dt.files).find((x) => x.type && x.type.indexOf('image/') === 0);
+      if (f) return { blob: f, mime: f.type };
+    }
+    return null;
+  }
+
+  async function saveClipboardImage(info) {
+    const buf = new Uint8Array(await info.blob.arrayBuffer());
+    return api.saveImage(Object.assign({}, imageDescriptor(activeProject()), {
+      mime: info.mime || info.blob.type || 'image/png',
+      name: info.blob.name || '',
+      data: buf,
+    }));
+  }
+
+  // Ctrl+V of a screenshot / image in the raw source editor: save it under the
+  // project's img/ and insert ![](img/<name>). Non-image pastes fall through.
+  async function handleEditorPaste(e, ta) {
+    const info = extractImageFromClipboard(e);
+    if (!info) return;
+    e.preventDefault();
+    try {
+      const res = await saveClipboardImage(info);
+      if (!res || !res.ok) {
+        toast(t('toast.imgErr') + ((res && res.error) || ''), 'error');
+        return;
+      }
+      insertIntoEditor(ta, `![](${res.rel})`);
+      toast(t('toast.imgOk') + res.rel, 'success');
+    } catch (err) {
+      toast(t('toast.imgErr') + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Typora-like inline WYSIWYG: rendered blocks that turn into their Markdown
+  // source when clicked. `s.content` stays the canonical Markdown throughout.
+  // ------------------------------------------------------------------
+
+  // Resolve local img/ images to data URLs (the renderer CSP blocks file:).
+  function resolvePreviewImages(container, desc) {
+    Array.from(container.querySelectorAll('img')).forEach((img) => {
+      const src = img.getAttribute('src') || '';
+      if (/^(data:|https?:)/i.test(src)) return;
+      img.dataset.rel = src;
+      api
+        .readImageDataUrl(Object.assign({}, desc, { rel: src }))
+        .then((res) => {
+          if (res && res.ok) img.setAttribute('src', res.dataUrl);
+          else img.replaceWith(document.createTextNode('⚠ ' + src));
+        })
+        .catch(() => {});
+    });
+  }
+
+  function renderBlockInto(rendered, src, desc) {
+    if (!src || !src.trim()) {
+      rendered.innerHTML =
+        '<span class="md-block-empty">' + (lang === 'zh' ? '空白段落（點此輸入）…' : 'empty paragraph…') + '</span>';
+      return;
+    }
+    let html = '';
+    try {
+      html = window.M2MD && window.M2MD.render ? window.M2MD.render(src) : '';
+    } catch (_e) {
+      html = '';
+    }
+    rendered.innerHTML = html;
+    resolvePreviewImages(rendered, desc);
+  }
+
+  function makeBlockEl(src, s, desc) {
+    const b = document.createElement('div');
+    b.className = 'md-block';
+    b.dataset.src = src || '';
+    const rendered = document.createElement('div');
+    rendered.className = 'md-rendered';
+    renderBlockInto(rendered, src || '', desc);
+    b.appendChild(rendered);
+    b.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (b.classList.contains('editing')) return;
+      e.preventDefault();
+      enterBlockEdit(b, s, desc);
+    });
+    return b;
+  }
+
+  function autoSizeBlock(ta) {
+    ta.style.height = 'auto';
+    ta.style.height = ta.scrollHeight + 'px';
+  }
+
+  function wysContainerOf(b) {
+    return (b.closest && b.closest('.md-wys')) || b.parentNode;
+  }
+
+  function enterBlockEdit(b, s, desc) {
+    if (b.classList.contains('editing')) return;
+    const rendered = b.querySelector('.md-rendered');
+    if (rendered) rendered.style.display = 'none';
+    const ta = document.createElement('textarea');
+    ta.className = 'md-block-edit';
+    ta.value = b.dataset.src || '';
+    ta.spellcheck = false;
+    ta.style.fontSize = editorFontPx() + 'px';
+    b.appendChild(ta);
+    b.classList.add('editing');
+    autoSizeBlock(ta);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = ta.value.length;
+    ta.addEventListener('input', () => autoSizeBlock(ta));
+    ta.addEventListener('keydown', (e) => handleBlockKeydown(e, ta, b, s, desc));
+    ta.addEventListener('paste', (e) => handleBlockPaste(e, ta, b, s, desc));
+    ta.addEventListener('blur', () => commitBlock(b, s, desc));
+  }
+
+  function renderBlockView(b, desc) {
+    b.classList.remove('editing');
+    const ta = b.querySelector('.md-block-edit');
+    if (ta) ta.remove();
+    let rendered = b.querySelector('.md-rendered');
+    if (!rendered) {
+      rendered = document.createElement('div');
+      rendered.className = 'md-rendered';
+      b.appendChild(rendered);
+    }
+    rendered.style.display = '';
+    renderBlockInto(rendered, b.dataset.src || '', desc);
+  }
+
+  function syncContentFromBlocks(container, s) {
+    const srcs = Array.from(container.querySelectorAll('.md-block'))
+      .map((elm) => elm.dataset.src || '')
+      .filter((x) => x.trim() !== '');
+    s.content = srcs.join('\n\n');
+    el('counter').textContent = counterText(s.content);
+    saveState();
+    refreshSectionTabDirty();
+  }
+
+  function commitBlock(b, s, desc) {
+    const ta = b.querySelector('.md-block-edit');
+    if (!ta) return;
+    const container = wysContainerOf(b);
+    const val = ta.value;
+    const subs = window.M2MD && window.M2MD.splitBlocks ? window.M2MD.splitBlocks(val) : val.trim() ? [val.trim()] : [];
+    if (subs.length <= 1) {
+      b.dataset.src = subs.length ? subs[0] : '';
+      if (!b.dataset.src && container.querySelectorAll('.md-block').length > 1) {
+        b.remove();
+      } else {
+        renderBlockView(b, desc);
+      }
+    } else {
+      subs.forEach((sub) => container.insertBefore(makeBlockEl(sub, s, desc), b));
+      b.remove();
+    }
+    syncContentFromBlocks(container, s);
+  }
+
+  function handleBlockKeydown(e, ta, b, s, desc) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      doExport();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      ta.blur();
+      return;
+    }
+    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.isComposing) {
+      const val = ta.value;
+      const pos = ta.selectionStart;
+      const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
+      const line = val.slice(lineStart, pos);
+      if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+        if (handleEnterList(ta)) {
+          e.preventDefault();
+          return;
+        }
+      }
+      const looksMultiline = /^\s*(```|~~~)/.test(val) || (/\|/.test(val) && /\n/.test(val));
+      const atEnd = pos === ta.selectionEnd && pos === val.length;
+      if (atEnd && !looksMultiline) {
+        e.preventDefault();
+        const before = val.replace(/\n+$/, '');
+        if (before.trim() === '') return;
+        const container = wysContainerOf(b);
+        b.dataset.src = before;
+        renderBlockView(b, desc);
+        const nb = makeBlockEl('', s, desc);
+        if (b.nextSibling) container.insertBefore(nb, b.nextSibling);
+        else container.appendChild(nb);
+        syncContentFromBlocks(container, s);
+        enterBlockEdit(nb, s, desc);
+      }
+      return;
+    }
+    handleEditorKeydown(e, ta);
+  }
+
+  // Pasting an image inside a block drops it in as its own image block right
+  // below (so it renders immediately) and moves the caret into a fresh block.
+  async function handleBlockPaste(e, ta, b, s, desc) {
+    const info = extractImageFromClipboard(e);
+    if (!info) return;
+    e.preventDefault();
+    try {
+      const res = await saveClipboardImage(info);
+      if (!res || !res.ok) {
+        toast(t('toast.imgErr') + ((res && res.error) || ''), 'error');
+        return;
+      }
+      const container = wysContainerOf(b);
+      b.dataset.src = ta.value;
+      renderBlockView(b, desc);
+      const imgBlock = makeBlockEl('![](' + res.rel + ')', s, desc);
+      const nextBlock = makeBlockEl('', s, desc);
+      const anchor = b.nextSibling;
+      container.insertBefore(imgBlock, anchor);
+      container.insertBefore(nextBlock, anchor);
+      syncContentFromBlocks(container, s);
+      enterBlockEdit(nextBlock, s, desc);
+      toast(t('toast.imgOk') + res.rel, 'success');
+    } catch (err) {
+      toast(t('toast.imgErr') + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  function renderWysiwyg(container, s, desc) {
+    container.innerHTML = '';
+    let blocks = window.M2MD && window.M2MD.splitBlocks ? window.M2MD.splitBlocks(s.content || '') : [];
+    if (!blocks.length) blocks = [''];
+    blocks.forEach((src) => container.appendChild(makeBlockEl(src, s, desc)));
+
+    const add = document.createElement('div');
+    add.className = 'md-add';
+    add.textContent = lang === 'zh' ? '＋ 點此新增段落' : '+ Add paragraph';
+    add.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      const nb = makeBlockEl('', s, desc);
+      container.insertBefore(nb, add);
+      enterBlockEdit(nb, s, desc);
+    });
+    container.appendChild(add);
+  }
+
+  // ------------------------------------------------------------------
+  // Image right-click menu: copy to clipboard / delete (Ctrl+Z to undo)
+  // ------------------------------------------------------------------
+  const imageUndoStack = [];
+
+  function closeImageContextMenu() {
+    const m = document.getElementById('imgCtxMenu');
+    if (m) m.remove();
+  }
+
+  function showImageContextMenu(x, y, img) {
+    closeImageContextMenu();
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'imgCtxMenu';
+    const item = (label, danger, fn) => {
+      const it = document.createElement('div');
+      it.className = 'ctx-item' + (danger ? ' danger' : '');
+      it.textContent = label;
+      it.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeImageContextMenu();
+        fn();
+      });
+      return it;
+    };
+    menu.appendChild(item(lang === 'zh' ? '複製圖片' : 'Copy image', false, () => copyImageToClipboard(img)));
+    menu.appendChild(item(lang === 'zh' ? '刪除圖片' : 'Delete image', true, () => deleteImageFromWysiwyg(img)));
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
+  }
+
+  async function copyImageToClipboard(img) {
+    const rel = img && img.dataset ? img.dataset.rel : '';
+    if (!rel) return;
+    try {
+      const res = await api.copyImageToClipboard(Object.assign({}, imageDescriptor(activeProject()), { rel }));
+      if (res && res.ok) toast(lang === 'zh' ? '圖片已複製到剪貼簿' : 'Image copied to clipboard', 'success');
+      else toast((lang === 'zh' ? '複製失敗：' : 'Copy failed: ') + ((res && res.error) || ''), 'error');
+    } catch (err) {
+      toast((lang === 'zh' ? '複製失敗：' : 'Copy failed: ') + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  // Remove the ![alt](rel) Markdown for a given image path from the content.
+  function removeImageMarkdown(content, rel) {
+    const esc = String(rel).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('!\\[[^\\]]*\\]\\(\\s*' + esc + '(?:\\s+"[^"]*")?\\s*\\)', 'g');
+    return String(content)
+      .replace(re, '')
+      .replace(/[ \t]+\n/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^\n+|\n+$/g, '');
+  }
+
+  async function deleteImageFromWysiwyg(img) {
+    const rel = img && img.dataset ? img.dataset.rel : '';
+    if (!rel) return;
+    const p = activeProject();
+    const s = activeSection(p);
+    const desc = imageDescriptor(p);
+    const block = img.closest ? img.closest('.md-block') : null;
+    let blockIndex = 0;
+    if (block && block.parentNode) {
+      blockIndex = Array.from(block.parentNode.querySelectorAll('.md-block')).indexOf(block);
+    }
+    let base64 = null;
+    try {
+      const res = await api.deleteImage(Object.assign({}, desc, { rel }));
+      if (res && res.ok) base64 = res.base64 || null;
+    } catch (_e) {
+      /* file may already be gone - still remove the markdown */
+    }
+    s.content = removeImageMarkdown(s.content, rel);
+    saveState();
+    imageUndoStack.push({ rel, base64, desc, blockIndex, section: s });
+    if (imageUndoStack.length > 20) imageUndoStack.shift();
+    renderEditor();
+    refreshSectionTabDirty();
+    toast(lang === 'zh' ? '已刪除圖片（Ctrl+Z 可還原）' : 'Image deleted (Ctrl+Z to undo)', 'info');
+  }
+
+  function undoImageDelete() {
+    const entry = imageUndoStack.pop();
+    if (!entry) return false;
+    if (entry.base64) {
+      api.restoreImage(Object.assign({}, entry.desc, { rel: entry.rel, base64: entry.base64 })).catch(() => {});
+    }
+    const s = entry.section;
+    const blocks = window.M2MD && window.M2MD.splitBlocks ? window.M2MD.splitBlocks(s.content) : s.content ? [s.content] : [];
+    const idx = Math.min(Math.max(0, entry.blockIndex), blocks.length);
+    blocks.splice(idx, 0, '![](' + entry.rel + ')');
+    s.content = blocks.join('\n\n');
+    saveState();
+    renderEditor();
+    refreshSectionTabDirty();
+    toast(lang === 'zh' ? '已還原圖片' : 'Image restored', 'success');
+    return true;
   }
 
   // ------------------------------------------------------------------
@@ -689,6 +1271,15 @@
 
     el('btnFontDown').addEventListener('click', () => bumpEditorFont(-1));
     el('btnFontUp').addEventListener('click', () => bumpEditorFont(1));
+
+    const bp = el('btnPreview');
+    if (bp) {
+      bp.addEventListener('click', () => {
+        state.previewMode = !state.previewMode;
+        saveState();
+        renderEditor();
+      });
+    }
   }
 
   // ------------------------------------------------------------------
@@ -898,6 +1489,27 @@
         el('view-' + view).classList.add('active');
       });
     });
+
+    // Ctrl+Z restores the most recently deleted image (when not typing in a
+    // field, so it never steals a textarea's native undo). Esc / outside click
+    // dismisses the image right-click menu.
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
+        const ae = document.activeElement;
+        const inField = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT');
+        if (!inField && imageUndoStack.length) {
+          e.preventDefault();
+          undoImageDelete();
+        }
+      }
+      if (e.key === 'Escape') closeImageContextMenu();
+    });
+    document.addEventListener('mousedown', (e) => {
+      const m = document.getElementById('imgCtxMenu');
+      if (m && !m.contains(e.target)) closeImageContextMenu();
+    });
+    document.addEventListener('scroll', closeImageContextMenu, true);
+    window.addEventListener('blur', closeImageContextMenu);
 
     el('btnExport').addEventListener('click', doExport);
     el('btnExportSingle').addEventListener('click', doExportSingle);
