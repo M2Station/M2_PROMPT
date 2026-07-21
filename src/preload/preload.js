@@ -36,5 +36,6 @@ contextBridge.exposeInMainWorld('m2prompt', {
   copyImageToClipboard: (payload) => ipcRenderer.invoke('image:copyToClipboard', payload),
   deleteImage: (payload) => ipcRenderer.invoke('image:delete', payload),
   restoreImage: (payload) => ipcRenderer.invoke('image:restore', payload),
+  revealImage: (payload) => ipcRenderer.invoke('image:revealInFolder', payload),
   loadI18n: (lang) => ipcRenderer.invoke('i18n:load', lang),
 });

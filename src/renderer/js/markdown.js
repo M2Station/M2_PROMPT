@@ -79,11 +79,15 @@
     // Inline code.
     out = out.replace(/`([^`]+)`/g, (m, c) => keep('<code>' + escapeHtml(c) + '</code>'));
 
-    // Images: ![alt](url "title")
-    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (m, alt, url) => {
+    // Images: ![alt](url "title"). A title of the form "w=NNN" carries an
+    // explicit pixel width set by the WYSIWYG zoom in / out controls.
+    out = out.replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (m, alt, url, title) => {
       const u = safeUrl(url);
       if (!u) return m;
-      return keep('<img alt="' + escapeHtml(alt) + '" src="' + escapeHtml(u) + '" />');
+      let extra = '';
+      const wm = String(title || '').match(/^\s*w=(\d{1,4})\s*$/i);
+      if (wm) extra = ' style="width:' + wm[1] + 'px;max-width:none"';
+      return keep('<img alt="' + escapeHtml(alt) + '" src="' + escapeHtml(u) + '"' + extra + ' />');
     });
 
     // Links: [text](url "title")

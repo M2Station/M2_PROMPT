@@ -503,6 +503,19 @@ function registerIpc(options) {
     }
   });
 
+  // Reveal an image in the OS file manager (Explorer / Finder), selecting it.
+  ipcMain.handle('image:revealInFolder', (_e, payload) => {
+    try {
+      const abs = resolveImageAbs(payload);
+      if (!abs) return { ok: false, error: 'BAD_PATH' };
+      if (!fs.existsSync(abs)) return { ok: false, error: 'MISSING' };
+      shell.showItemInFolder(abs);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
   // Delete an image file and return its bytes (base64) so the renderer can
   // offer Ctrl+Z undo (restore).
   ipcMain.handle('image:delete', (_e, payload) => {

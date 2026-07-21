@@ -69,7 +69,8 @@
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
         const s = JSON.parse(raw);
-        if (s && Array.isArray(s.projects) && s.projects.length) return s;
+        // Accept an empty projects array too (the "no project open" state).
+        if (s && Array.isArray(s.projects)) return s;
       }
     } catch (_e) {
       /* ignore */
@@ -92,6 +93,7 @@
 
   function activeSection(proj) {
     const p = proj || activeProject();
+    if (!p) return null;
     return p.sections.find((s) => s.id === p.activeSectionId) || p.sections[0];
   }
 
@@ -108,13 +110,31 @@
     });
   }
 
+  // A project is "dirty" when it was opened / saved from disk and its current
+  // content differs from the last saved version (drives the Save button and the
+  // red project-tab indicator).
+  function projectDirty(p) {
+    return !!(p && p.sourcePath && projectSignature(p) !== p.savedSig);
+  }
+
+  // Toggle the red "modified" style on each project tab in place (no rebuild).
+  function refreshProjectTabDirty() {
+    const nav = document.getElementById('projTabs');
+    if (!nav) return;
+    nav.querySelectorAll('.exp-tab').forEach((btn) => {
+      const pid = btn.dataset.pid;
+      if (!pid) return;
+      const p = state.projects.find((x) => x.id === pid);
+      btn.classList.toggle('dirty', projectDirty(p));
+    });
+  }
+
   // Show the SAVE button only for a project opened from disk with unsaved edits.
   function updateSaveButton() {
     const btn = document.getElementById('btnSave');
     if (!btn) return;
-    const p = activeProject();
-    const dirty = !!(p && p.sourcePath && projectSignature(p) !== p.savedSig);
-    btn.style.display = dirty ? '' : 'none';
+    btn.style.display = projectDirty(activeProject()) ? '' : 'none';
+    refreshProjectTabDirty();
   }
 
   // A section (tab) is "dirty" when its content or name differs from the version
@@ -200,7 +220,9 @@
   }
 
   function folderPreview() {
-    const abbr = abbreviate(activeProject().fields.projectName, state.abbrevLen);
+    const p = activeProject();
+    if (!p) return '';
+    const abbr = abbreviate(p.fields.projectName, state.abbrevLen);
     if (!state.usePrefix) return abbr;
     const d = new Date();
     const date = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
@@ -281,12 +303,89 @@
   // ------------------------------------------------------------------
   // Rendering: project tabs
   // ------------------------------------------------------------------
+  const TAB_ICON_FOLDER =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>';
+  const TAB_ICON_NEWDOC =
+    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>';
+
+  // Close a single project tab (always keeps at least one project open).
+  function closeProjectTab(pid) {
+    const idx = state.projects.findIndex((x) => x.id === pid);
+    if (idx === -1) return;
+    state.projects.splice(idx, 1);
+    if (state.activeProjectId === pid) {
+      state.activeProjectId = state.projects.length ? state.projects[Math.max(0, idx - 1)].id : null;
+    }
+    saveState();
+    renderAll();
+  }
+
+  // Close every project tab except `pid` (confirms first, since drafts are lost).
+  function closeOtherProjectTabs(pid) {
+    const keep = state.projects.find((x) => x.id === pid);
+    if (!keep || state.projects.length <= 1) return;
+    const others = state.projects.length - 1;
+    const msg = lang === 'zh' ? `關閉其他 ${others} 個專案分頁？` : `Close ${others} other project tab(s)?`;
+    if (!window.confirm(msg)) return;
+    state.projects = [keep];
+    state.activeProjectId = keep.id;
+    saveState();
+    renderAll();
+  }
+
+  function closeTabContextMenu() {
+    const m = document.getElementById('tabCtxMenu');
+    if (m) m.remove();
+  }
+
+  function showTabContextMenu(x, y, pid) {
+    closeTabContextMenu();
+    closeImageContextMenu();
+    closeTextContextMenu();
+    const zh = lang === 'zh';
+    const only = state.projects.length <= 1;
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'tabCtxMenu';
+    const item = (label, disabled, fn) => {
+      const it = document.createElement('div');
+      it.className = 'ctx-item' + (disabled ? ' disabled' : '');
+      const lab = document.createElement('span');
+      lab.textContent = label;
+      it.appendChild(lab);
+      if (!disabled) {
+        it.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          closeTabContextMenu();
+          fn();
+        });
+      }
+      menu.appendChild(it);
+    };
+    item(zh ? '關閉' : 'Close', false, () => closeProjectTab(pid));
+    item(zh ? '關閉其他' : 'Close others', only, () => closeOtherProjectTabs(pid));
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
+  }
+
   function renderProjectTabs() {
     const nav = el('projTabs');
     nav.innerHTML = '';
     state.projects.forEach((p) => {
       const btn = document.createElement('button');
-      btn.className = 'exp-tab' + (p.id === state.activeProjectId ? ' active' : '');
+      btn.className =
+        'exp-tab' + (p.id === state.activeProjectId ? ' active' : '') + (projectDirty(p) ? ' dirty' : '');
+      btn.dataset.pid = p.id;
+      const icon = document.createElement('span');
+      icon.className = 'exp-tab-icon';
+      icon.innerHTML = p.sourcePath ? TAB_ICON_FOLDER : TAB_ICON_NEWDOC;
+      icon.title = p.sourcePath
+        ? (lang === 'zh' ? '已開啟的專案' : 'Opened project')
+        : (lang === 'zh' ? '新專案（尚未輸出）' : 'New project (not exported yet)');
+      btn.appendChild(icon);
       const name = document.createElement('span');
       const label = (p.fields.projectName || '').trim();
       name.className = 'exp-tab-name' + (label ? '' : ' untitled');
@@ -297,22 +396,19 @@
         saveState();
         renderAll();
       });
-      if (state.projects.length > 1) {
-        const close = document.createElement('span');
-        close.className = 'exp-tab-close';
-        close.textContent = '\u00d7';
-        close.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const idx = state.projects.findIndex((x) => x.id === p.id);
-          state.projects.splice(idx, 1);
-          if (state.activeProjectId === p.id) {
-            state.activeProjectId = state.projects[Math.max(0, idx - 1)].id;
-          }
-          saveState();
-          renderAll();
-        });
-        btn.appendChild(close);
-      }
+      btn.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        showTabContextMenu(e.clientX, e.clientY, p.id);
+      });
+      const close = document.createElement('span');
+      close.className = 'exp-tab-close';
+      close.textContent = '\u00d7';
+      close.title = lang === 'zh' ? '關閉' : 'Close';
+      close.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeProjectTab(p.id);
+      });
+      btn.appendChild(close);
       nav.appendChild(btn);
     });
 
@@ -422,6 +518,7 @@
     const p = activeProject();
     const tabs = el('sectionTabs');
     tabs.innerHTML = '';
+    if (!p) return;
     if (!p.sections.some((s) => s.id === p.activeSectionId)) {
       p.activeSectionId = p.sections[0] && p.sections[0].id;
     }
@@ -555,9 +652,14 @@
 
   function renderEditor() {
     const p = activeProject();
-    const s = activeSection(p);
     const body = el('sectionBody');
+    hideImageToolbar();
+    selAnchorBlock = null;
+    lastActiveBlock = null;
+    selFocusBlock = null;
     body.innerHTML = '';
+    if (!p) return;
+    const s = activeSection(p);
     if (!s) return;
 
     const preview = state.previewMode === true;
@@ -583,6 +685,17 @@
     });
     ta.addEventListener('keydown', (e) => handleEditorKeydown(e, ta));
     ta.addEventListener('paste', (e) => handleEditorPaste(e, ta));
+    ta.addEventListener('dragover', (e) => {
+      if (hasImageDrag(e)) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    ta.addEventListener('drop', (e) => handleEditorDrop(e, ta));
+    ta.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showTextContextMenu(e.clientX, e.clientY, ta);
+    });
     pane.appendChild(ta);
 
     // WYSIWYG (Typora-like) editable view: each block renders inline and turns
@@ -591,11 +704,37 @@
     wysBox.className = 'md-preview md-wys';
     wysBox.style.fontSize = editorFontPx() + 'px';
     wysBox.style.display = preview ? '' : 'none';
+    wysBox.addEventListener('mousedown', (e) => {
+      if (e.target === wysBox) clearBlockSelection(wysBox);
+    });
+    wysBox.addEventListener('scroll', () => {
+      if (toolbarImg) positionImageToolbar(getImageToolbar(), toolbarImg);
+    });
+    wysBox.addEventListener('dragover', (e) => {
+      if (hasImageDrag(e)) {
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    wysBox.addEventListener('drop', (e) => handleWysDrop(e, wysBox, s, imageDescriptor(p)));
     wysBox.addEventListener('contextmenu', (e) => {
-      const img = e.target && e.target.closest ? e.target.closest('img') : null;
-      if (img && img.dataset && img.dataset.rel) {
+      const target = e.target;
+      const block = target && target.closest ? target.closest('.md-block') : null;
+      const editing = !!(block && block.classList.contains('editing'));
+      const img = target && target.closest ? target.closest('img') : null;
+      // Right-click an image (not while editing its source) -> image menu.
+      if (img && img.dataset && img.dataset.rel && !editing) {
         e.preventDefault();
         showImageContextMenu(e.clientX, e.clientY, img);
+        return;
+      }
+      // Right-click text -> open the block for editing (if needed) and show the
+      // Markdown formatting menu targeting its source textarea.
+      if (block) {
+        e.preventDefault();
+        if (!editing) enterBlockEdit(block, s, imageDescriptor(p));
+        const ta2 = block.querySelector('.md-block-edit');
+        if (ta2) showTextContextMenu(e.clientX, e.clientY, ta2);
       }
     });
     pane.appendChild(wysBox);
@@ -605,13 +744,24 @@
 
     if (preview) renderWysiwyg(wysBox, s, imageDescriptor(p));
     updatePreviewToggle();
+    updateSelectionToolbar();
   }
 
   // ------------------------------------------------------------------
   // Editor helpers: WYSIWYG preview, Typora-style shortcuts, image paste
   // ------------------------------------------------------------------
   function activeEditorTextarea() {
-    return el('sectionBody') && el('sectionBody').querySelector('.log-input');
+    // Prefer whichever editor textarea currently has focus: a WYSIWYG paragraph
+    // being edited (.md-block-edit) or the raw source editor (.log-input).
+    const ae = document.activeElement;
+    if (ae && ae.classList && (ae.classList.contains('md-block-edit') || ae.classList.contains('log-input'))) {
+      return ae;
+    }
+    // In source mode the visible .log-input is the editor even without focus.
+    if (!state.previewMode) {
+      return el('sectionBody') && el('sectionBody').querySelector('.log-input');
+    }
+    return null;
   }
 
   // Describes where this project's files (and its img/ folder) live, so the
@@ -693,6 +843,12 @@
       const caret = startPos + 4;
       ta.selectionStart = ta.selectionEnd = caret;
     }
+  }
+
+  function insertHorizontalRule(ta) {
+    const before = ta.value.slice(0, ta.selectionStart);
+    const pre = before && !before.endsWith('\n') ? '\n' : '';
+    insertIntoEditor(ta, pre + '---\n');
   }
 
   // Line-based helpers operate on the caret line (start..end of that line).
@@ -817,9 +973,9 @@
     }
   }
 
-  // Pull an image blob from a paste event's clipboard, or null for non-images.
-  function extractImageFromClipboard(e) {
-    const dt = e.clipboardData;
+  // Pull an image blob from a DataTransfer (clipboard paste or drag-drop), or
+  // null when it carries no image.
+  function extractImageFromDataTransfer(dt) {
     if (!dt) return null;
     const items = dt.items ? Array.from(dt.items) : [];
     const imgItem = items.find((it) => it.kind === 'file' && it.type && it.type.indexOf('image/') === 0);
@@ -832,6 +988,31 @@
       if (f) return { blob: f, mime: f.type };
     }
     return null;
+  }
+
+  // Pull an image blob from a paste event's clipboard, or null for non-images.
+  function extractImageFromClipboard(e) {
+    return extractImageFromDataTransfer(e.clipboardData);
+  }
+
+  // True when a drag event carries image file(s) (used to accept the drop).
+  function hasImageDrag(e) {
+    const dt = e.dataTransfer;
+    if (!dt) return false;
+    if (dt.items && dt.items.length) {
+      return Array.from(dt.items).some((it) => it.kind === 'file' && (!it.type || it.type.indexOf('image/') === 0));
+    }
+    if (dt.types && Array.from(dt.types).indexOf('Files') !== -1) return true;
+    return false;
+  }
+
+  // True when a drag event carries any file (used to block window navigation).
+  function dragHasFiles(e) {
+    const dt = e.dataTransfer;
+    if (!dt) return false;
+    if (dt.types && Array.from(dt.types).indexOf('Files') !== -1) return true;
+    if (dt.items && Array.from(dt.items).some((it) => it.kind === 'file')) return true;
+    return false;
   }
 
   async function saveClipboardImage(info) {
@@ -862,6 +1043,49 @@
     }
   }
 
+  // Drag-and-drop an image file into the raw source editor: save it under the
+  // project's img/ and insert ![](img/<name>) at the caret.
+  async function handleEditorDrop(e, ta) {
+    const info = extractImageFromDataTransfer(e.dataTransfer);
+    if (!info) return;
+    e.preventDefault();
+    try {
+      const res = await saveClipboardImage(info);
+      if (!res || !res.ok) {
+        toast(t('toast.imgErr') + ((res && res.error) || ''), 'error');
+        return;
+      }
+      ta.focus();
+      insertIntoEditor(ta, `![](${res.rel})`);
+      toast(t('toast.imgOk') + res.rel, 'success');
+    } catch (err) {
+      toast(t('toast.imgErr') + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  // Drag-and-drop an image file into the WYSIWYG view: save it and append an
+  // image block (rendered immediately) before the trailing "+ Add paragraph".
+  async function handleWysDrop(e, container, s, desc) {
+    const info = extractImageFromDataTransfer(e.dataTransfer);
+    if (!info) return;
+    e.preventDefault();
+    try {
+      const res = await saveClipboardImage(info);
+      if (!res || !res.ok) {
+        toast(t('toast.imgErr') + ((res && res.error) || ''), 'error');
+        return;
+      }
+      const add = container.querySelector('.md-add');
+      const imgBlock = makeBlockEl('![](' + res.rel + ')', s, desc);
+      if (add) container.insertBefore(imgBlock, add);
+      else container.appendChild(imgBlock);
+      syncContentFromBlocks(container, s);
+      toast(t('toast.imgOk') + res.rel, 'success');
+    } catch (err) {
+      toast(t('toast.imgErr') + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
   // ------------------------------------------------------------------
   // Typora-like inline WYSIWYG: rendered blocks that turn into their Markdown
   // source when clicked. `s.content` stays the canonical Markdown throughout.
@@ -873,6 +1097,8 @@
       const src = img.getAttribute('src') || '';
       if (/^(data:|https?:)/i.test(src)) return;
       img.dataset.rel = src;
+      img.addEventListener('mouseenter', () => showImageToolbar(img));
+      img.addEventListener('mouseleave', scheduleToolbarHide);
       api
         .readImageDataUrl(Object.assign({}, desc, { rel: src }))
         .then((res) => {
@@ -907,11 +1133,63 @@
     rendered.className = 'md-rendered';
     renderBlockInto(rendered, src || '', desc);
     b.appendChild(rendered);
+
+    // A "+" at the bottom of every block inserts a new paragraph right after it,
+    // so paragraphs can be added between blocks (not only at the end).
+    const ins = document.createElement('div');
+    ins.className = 'md-block-insert';
+    const plus = document.createElement('span');
+    plus.className = 'md-ins-plus';
+    plus.textContent = '+';
+    plus.title = lang === 'zh' ? '在此新增段落' : 'Insert a paragraph here';
+    ins.appendChild(plus);
+    plus.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    plus.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      insertBlockAfter(b, s, desc);
+    });
+    b.appendChild(ins);
+
     b.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
+      const container = wysContainerOf(b);
+      const img = e.target && e.target.closest ? e.target.closest('img') : null;
+
+      // Ctrl / Cmd + click on an image opens it in the full-screen lightbox.
+      if ((e.ctrlKey || e.metaKey) && img && img.dataset && img.dataset.rel) {
+        e.preventDefault();
+        openImageLightbox(img);
+        return;
+      }
+
+      // Shift + click extends a paragraph selection from the anchor to here.
+      if (e.shiftKey) {
+        e.preventDefault();
+        commitEditingBlock(container);
+        selectBlockRange(container, selAnchorBlock || b, b);
+        selFocusBlock = b;
+        return;
+      }
+
+      // Ctrl / Cmd + click on text toggles this paragraph in the selection.
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        commitEditingBlock(container);
+        toggleBlockSelected(b);
+        selAnchorBlock = b;
+        selFocusBlock = b;
+        return;
+      }
+
       if (b.classList.contains('editing')) return;
+
+      // Plain press: a click edits this paragraph; a drag selects across them.
       e.preventDefault();
-      enterBlockEdit(b, s, desc);
+      beginBlockPress(e, b, container, s, desc);
     });
     return b;
   }
@@ -925,10 +1203,55 @@
     return (b.closest && b.closest('.md-wys')) || b.parentNode;
   }
 
+  // True when a block's Markdown contains an inline image.
+  function blockHasImage(src) {
+    return /!\[[^\]]*\]\([^)]*\)/.test(String(src || ''));
+  }
+
+  // Parse the first image in a block's Markdown -> { alt, rel, width } or null.
+  function firstImageInfo(md) {
+    const m = String(md || '').match(/!\[([^\]]*)\]\(\s*([^)\s]+)(?:\s+"([^"]*)")?\s*\)/);
+    if (!m) return null;
+    const wm = String(m[3] || '').match(/^\s*w=(\d{1,4})\s*$/i);
+    return { alt: m[1] || '', rel: m[2] || '', width: wm ? parseInt(wm[1], 10) : null };
+  }
+
+  // Live-update the image preview shown above the source while an image block is
+  // being edited. Adjusts size / alt in place when the file is unchanged (no
+  // flicker); re-renders fully only when the image identity actually changes.
+  let imgPreviewTimer = null;
+  function liveSyncImagePreview(b, val, desc) {
+    if (imgPreviewTimer) clearTimeout(imgPreviewTimer);
+    imgPreviewTimer = setTimeout(() => {
+      const rendered = b.querySelector('.md-rendered');
+      if (!rendered) return;
+      const info = firstImageInfo(val);
+      if (!info) return; // incomplete / removed image: keep the last preview until commit
+      const img = rendered.querySelector('img');
+      if (img && img.dataset && img.dataset.rel === info.rel) {
+        if (info.width) {
+          img.style.width = info.width + 'px';
+          img.style.maxWidth = 'none';
+        } else {
+          img.style.width = '';
+          img.style.maxWidth = '';
+        }
+        img.alt = info.alt;
+      } else {
+        renderBlockInto(rendered, val, desc);
+      }
+    }, 220);
+  }
+
   function enterBlockEdit(b, s, desc) {
     if (b.classList.contains('editing')) return;
+    hideImageToolbar();
+    lastActiveBlock = b;
+    const isImage = blockHasImage(b.dataset.src || '');
     const rendered = b.querySelector('.md-rendered');
-    if (rendered) rendered.style.display = 'none';
+    // For image blocks keep the rendered picture visible above the source, so
+    // the user can see it while editing the Markdown; other blocks hide it.
+    if (rendered) rendered.style.display = isImage ? '' : 'none';
     const ta = document.createElement('textarea');
     ta.className = 'md-block-edit';
     ta.value = b.dataset.src || '';
@@ -936,10 +1259,14 @@
     ta.style.fontSize = editorFontPx() + 'px';
     b.appendChild(ta);
     b.classList.add('editing');
+    if (isImage) b.classList.add('editing-image');
     autoSizeBlock(ta);
     ta.focus();
     ta.selectionStart = ta.selectionEnd = ta.value.length;
-    ta.addEventListener('input', () => autoSizeBlock(ta));
+    ta.addEventListener('input', () => {
+      autoSizeBlock(ta);
+      if (b.classList.contains('editing-image')) liveSyncImagePreview(b, ta.value, desc);
+    });
     ta.addEventListener('keydown', (e) => handleBlockKeydown(e, ta, b, s, desc));
     ta.addEventListener('paste', (e) => handleBlockPaste(e, ta, b, s, desc));
     ta.addEventListener('blur', () => commitBlock(b, s, desc));
@@ -947,6 +1274,7 @@
 
   function renderBlockView(b, desc) {
     b.classList.remove('editing');
+    b.classList.remove('editing-image');
     const ta = b.querySelector('.md-block-edit');
     if (ta) ta.remove();
     let rendered = b.querySelector('.md-rendered');
@@ -998,6 +1326,17 @@
     if (e.key === 'Escape') {
       e.preventDefault();
       ta.blur();
+      // Select the paragraph you just left so Up / Down navigate from here and
+      // Enter re-enters it.
+      const container = wysContainerOf(b);
+      if (container && container.contains(b)) {
+        clearBlockSelection(container);
+        b.classList.add('selected');
+        selAnchorBlock = b;
+        selFocusBlock = b;
+        lastActiveBlock = b;
+        updateSelectionToolbar();
+      }
       return;
     }
     if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.isComposing) {
@@ -1064,18 +1403,236 @@
     let blocks = window.M2MD && window.M2MD.splitBlocks ? window.M2MD.splitBlocks(s.content || '') : [];
     if (!blocks.length) blocks = [''];
     blocks.forEach((src) => container.appendChild(makeBlockEl(src, s, desc)));
+  }
 
-    const add = document.createElement('div');
-    add.className = 'md-add';
-    add.textContent = lang === 'zh' ? '＋ 點此新增段落' : '+ Add paragraph';
-    add.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      const nb = makeBlockEl('', s, desc);
-      container.insertBefore(nb, add);
-      enterBlockEdit(nb, s, desc);
-    });
-    container.appendChild(add);
+  // ------------------------------------------------------------------
+  // Multi-paragraph selection: Shift/Ctrl + click or drag to select several
+  // blocks, then copy (Ctrl+C) or delete (Del) them together.
+  // ------------------------------------------------------------------
+  let selAnchorBlock = null;
+  let lastActiveBlock = null;
+  let selFocusBlock = null;
+  const blockUndoStack = [];
+
+  function wysContainer() {
+    return el('sectionBody') && el('sectionBody').querySelector('.md-wys');
+  }
+
+  function clearBlockSelection(container) {
+    const c = container || wysContainer();
+    if (c) c.querySelectorAll('.md-block.selected').forEach((b) => b.classList.remove('selected'));
+    selFocusBlock = null;
+    updateSelectionToolbar();
+  }
+
+  function toggleBlockSelected(b) {
+    if (b) b.classList.toggle('selected');
+    updateSelectionToolbar();
+  }
+
+  function selectBlockRange(container, a, b) {
+    const blocks = Array.from(container.querySelectorAll('.md-block'));
+    let ia = blocks.indexOf(a);
+    let ib = blocks.indexOf(b);
+    if (ia === -1 || ib === -1) return;
+    if (ia > ib) {
+      const tmp = ia;
+      ia = ib;
+      ib = tmp;
+    }
+    blocks.forEach((blk, i) => blk.classList.toggle('selected', i >= ia && i <= ib));
+    updateSelectionToolbar();
+  }
+
+  function blockFromPoint(x, y, container) {
+    const node = document.elementFromPoint(x, y);
+    const b = node && node.closest ? node.closest('.md-block') : null;
+    return b && container.contains(b) ? b : null;
+  }
+
+  // Finish whichever block is open for editing so selection acts on settled MD.
+  function commitEditingBlock(container) {
+    const editing = container && container.querySelector('.md-block.editing');
+    const ta = editing && editing.querySelector('.md-block-edit');
+    if (ta) ta.blur();
+  }
+
+  // A plain press either edits the block (click) or starts a drag-selection.
+  function beginBlockPress(e, block, container, s, desc) {
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let dragging = false;
+    const move = (ev) => {
+      if (!dragging) {
+        if (Math.abs(ev.clientX - startX) + Math.abs(ev.clientY - startY) < 6) return;
+        dragging = true;
+        selAnchorBlock = block;
+        commitEditingBlock(container);
+      }
+      const over = blockFromPoint(ev.clientX, ev.clientY, container);
+      if (over) {
+        selectBlockRange(container, block, over);
+        selFocusBlock = over;
+      }
+    };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if (!dragging) {
+        clearBlockSelection(container);
+        selAnchorBlock = block;
+        enterBlockEdit(block, s, desc);
+      }
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  }
+
+  function copySelectedBlocks(container) {
+    const c = container || wysContainer();
+    const sel = c ? Array.from(c.querySelectorAll('.md-block.selected')) : [];
+    if (!sel.length) return;
+    const md = sel.map((b) => b.dataset.src || '').filter((x) => x.trim() !== '').join('\n\n');
+    navigator.clipboard.writeText(md).then(
+      () => toast(lang === 'zh' ? `已複製 ${sel.length} 個段落` : `Copied ${sel.length} paragraph(s)`, 'success'),
+      () => toast('Clipboard error', 'error')
+    );
+  }
+
+  function deleteSelectedBlocks(container) {
+    const c = container || wysContainer();
+    if (!c) return;
+    const sel = Array.from(c.querySelectorAll('.md-block.selected'));
+    if (!sel.length) return;
+    const s = activeSection();
+    if (!s) return;
+    const n = sel.length;
+    blockUndoStack.push({ section: s, content: s.content });
+    if (blockUndoStack.length > 30) blockUndoStack.shift();
+    sel.forEach((b) => b.remove());
+    syncContentFromBlocks(c, s);
+    renderEditor();
+    refreshSectionTabDirty();
+    toast(lang === 'zh' ? `已删除 ${n} 個段落（Ctrl+Z 復原）` : `Deleted ${n} paragraph(s) (Ctrl+Z to undo)`, 'info');
+  }
+
+  function undoBlockDelete() {
+    const entry = blockUndoStack.pop();
+    if (!entry) return false;
+    entry.section.content = entry.content;
+    saveState();
+    renderEditor();
+    refreshSectionTabDirty();
+    toast(lang === 'zh' ? '已復原段落' : 'Paragraphs restored', 'success');
+    return true;
+  }
+
+  function getSelectionToolbar() {
+    let bar = document.getElementById('blockSelBar');
+    if (bar) return bar;
+    bar = document.createElement('div');
+    bar.className = 'blocksel-bar';
+    bar.id = 'blockSelBar';
+    const count = document.createElement('span');
+    count.className = 'blocksel-count';
+    const mk = (cls, fn) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'blocksel-btn' + (cls ? ' ' + cls : '');
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        fn();
+      });
+      return btn;
+    };
+    bar._count = count;
+    bar._btnCopy = mk('', () => copySelectedBlocks(wysContainer()));
+    bar._btnDelete = mk('danger', () => deleteSelectedBlocks(wysContainer()));
+    bar._btnClear = mk('', () => clearBlockSelection(wysContainer()));
+    bar.appendChild(count);
+    bar.appendChild(bar._btnCopy);
+    bar.appendChild(bar._btnDelete);
+    bar.appendChild(bar._btnClear);
+    document.body.appendChild(bar);
+    return bar;
+  }
+
+  function updateSelectionToolbar() {
+    const c = wysContainer();
+    const n = c ? c.querySelectorAll('.md-block.selected').length : 0;
+    const bar = getSelectionToolbar();
+    // The action bar is for bulk actions, so only show it for multi-selection;
+    // a single navigated / selected paragraph stays clean.
+    if (n < 2) {
+      bar.classList.remove('open');
+      return;
+    }
+    const zh = lang === 'zh';
+    bar._count.textContent = zh ? `已選取 ${n} 個段落` : `${n} selected`;
+    bar._btnCopy.textContent = zh ? '複製' : 'Copy';
+    bar._btnDelete.textContent = zh ? '删除' : 'Delete';
+    bar._btnClear.textContent = zh ? '取消' : 'Clear';
+    bar.classList.add('open');
+  }
+
+  // Keyboard paragraph navigation. Plain Arrow moves a single-block selection;
+  // Shift+Arrow extends a range from the anchor (multi-select).
+  function moveBlockSelection(container, dir, extend) {
+    const blocks = Array.from(container.querySelectorAll('.md-block'));
+    if (!blocks.length) return;
+    const inDom = (elm) => !!elm && blocks.indexOf(elm) !== -1;
+    const selected = blocks.filter((b) => b.classList.contains('selected'));
+
+    // The moving end (focus) of the selection.
+    let focus = null;
+    if (inDom(selFocusBlock) && selFocusBlock.classList.contains('selected')) focus = selFocusBlock;
+    else if (selected.length) focus = dir > 0 ? selected[selected.length - 1] : selected[0];
+    else if (inDom(lastActiveBlock)) focus = lastActiveBlock;
+
+    if (!focus) {
+      // Nothing to move from yet: select an edge block.
+      const edge = blocks[dir > 0 ? 0 : blocks.length - 1];
+      blocks.forEach((b) => b.classList.toggle('selected', b === edge));
+      selAnchorBlock = edge;
+      selFocusBlock = edge;
+      updateSelectionToolbar();
+      edge.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+
+    const idx = Math.max(0, Math.min(blocks.length - 1, blocks.indexOf(focus) + dir));
+    const target = blocks[idx];
+
+    if (extend) {
+      if (!inDom(selAnchorBlock)) selAnchorBlock = focus;
+      selectBlockRange(container, selAnchorBlock, target);
+      selFocusBlock = target;
+    } else {
+      blocks.forEach((b) => b.classList.toggle('selected', b === target));
+      selAnchorBlock = target;
+      selFocusBlock = target;
+      updateSelectionToolbar();
+    }
+    target.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Enter edit mode on the currently selected paragraph (Enter key).
+  function editSelectedBlock(container) {
+    const cur = container.querySelector('.md-block.selected');
+    if (!cur) return;
+    clearBlockSelection(container);
+    const p = activeProject();
+    enterBlockEdit(cur, activeSection(p), imageDescriptor(p));
+  }
+
+  // Insert a fresh empty paragraph right after `block` and edit it.
+  function insertBlockAfter(block, s, desc) {
+    const container = wysContainerOf(block);
+    clearBlockSelection(container);
+    const nb = makeBlockEl('', s, desc);
+    block.after(nb);
+    enterBlockEdit(nb, s, desc);
   }
 
   // ------------------------------------------------------------------
@@ -1105,8 +1662,84 @@
       });
       return it;
     };
+    menu.appendChild(item(lang === 'zh' ? '放大' : 'Zoom in', false, () => zoomImage(img, 1.2)));
+    menu.appendChild(item(lang === 'zh' ? '縮小' : 'Zoom out', false, () => zoomImage(img, 1 / 1.2)));
     menu.appendChild(item(lang === 'zh' ? '複製圖片' : 'Copy image', false, () => copyImageToClipboard(img)));
+    menu.appendChild(item(lang === 'zh' ? '開啟圖片位置' : 'Open image location', false, () => revealImageLocation(img)));
     menu.appendChild(item(lang === 'zh' ? '刪除圖片' : 'Delete image', true, () => deleteImageFromWysiwyg(img)));
+    document.body.appendChild(menu);
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
+    menu.style.top = Math.max(4, Math.min(y, window.innerHeight - r.height - 6)) + 'px';
+  }
+
+  // ------------------------------------------------------------------
+  // Text right-click menu: apply Markdown formatting to the selection.
+  // ------------------------------------------------------------------
+  function closeTextContextMenu() {
+    const m = document.getElementById('txtCtxMenu');
+    if (m) m.remove();
+  }
+
+  function showTextContextMenu(x, y, ta) {
+    if (!ta) return;
+    closeTextContextMenu();
+    closeImageContextMenu();
+    const zh = lang === 'zh';
+    const menu = document.createElement('div');
+    menu.className = 'ctx-menu';
+    menu.id = 'txtCtxMenu';
+
+    const addItem = (label, hint, fn) => {
+      const it = document.createElement('div');
+      it.className = 'ctx-item';
+      const lab = document.createElement('span');
+      lab.textContent = label;
+      it.appendChild(lab);
+      if (hint) {
+        const kb = document.createElement('span');
+        kb.className = 'ctx-kbd';
+        kb.textContent = hint;
+        it.appendChild(kb);
+      }
+      // mousedown + preventDefault keeps the textarea focused so its selection
+      // survives; then we apply the formatting helper to it.
+      it.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        closeTextContextMenu();
+        ta.focus();
+        try {
+          fn(ta);
+        } catch (_e) {
+          /* ignore */
+        }
+      });
+      menu.appendChild(it);
+    };
+    const addSep = () => {
+      const sp = document.createElement('div');
+      sp.className = 'ctx-sep';
+      menu.appendChild(sp);
+    };
+
+    addItem(zh ? '粗體' : 'Bold', 'Ctrl+B', (t) => wrapSelection(t, '**', '**', zh ? '粗體' : 'bold'));
+    addItem(zh ? '斜體' : 'Italic', 'Ctrl+I', (t) => wrapSelection(t, '*', '*', zh ? '斜體' : 'italic'));
+    addItem(zh ? '刪除線' : 'Strikethrough', 'Ctrl+Shift+X', (t) => wrapSelection(t, '~~', '~~', zh ? '刪除線' : 'strike'));
+    addItem(zh ? '行內程式碼' : 'Inline code', 'Ctrl+`', (t) => wrapSelection(t, '`', '`', 'code'));
+    addSep();
+    addItem(zh ? '標題 1' : 'Heading 1', 'Ctrl+1', (t) => setHeadingLine(t, 1));
+    addItem(zh ? '標題 2' : 'Heading 2', 'Ctrl+2', (t) => setHeadingLine(t, 2));
+    addItem(zh ? '標題 3' : 'Heading 3', 'Ctrl+3', (t) => setHeadingLine(t, 3));
+    addSep();
+    addItem(zh ? '引用' : 'Blockquote', 'Ctrl+Shift+Q', (t) => toggleLinePrefix(t, '> '));
+    addItem(zh ? '項目符號清單' : 'Bulleted list', 'Ctrl+Shift+L', (t) => toggleLinePrefix(t, '- '));
+    addItem(zh ? '編號清單' : 'Numbered list', '', (t) => toggleLinePrefix(t, '1. '));
+    addSep();
+    addItem(zh ? '程式碼區塊' : 'Code block', 'Ctrl+Shift+C', (t) => insertCodeBlock(t));
+    addItem(zh ? '連結' : 'Link', 'Ctrl+K', (t) => insertLink(t));
+    addItem(zh ? '分隔線' : 'Horizontal rule', '', (t) => insertHorizontalRule(t));
+
     document.body.appendChild(menu);
     const r = menu.getBoundingClientRect();
     menu.style.left = Math.max(4, Math.min(x, window.innerWidth - r.width - 6)) + 'px';
@@ -1179,6 +1812,368 @@
     refreshSectionTabDirty();
     toast(lang === 'zh' ? '已還原圖片' : 'Image restored', 'success');
     return true;
+  }
+
+  // ------------------------------------------------------------------
+  // Image hover toolbar (Typora-style): floats above an image in the WYSIWYG
+  // view with zoom out / zoom in / copy / open-location / delete actions.
+  // ------------------------------------------------------------------
+  let toolbarImg = null;
+  let toolbarHideTimer = null;
+
+  const TB_ICONS = {
+    zoomOut:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>',
+    zoomIn:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>',
+    copy:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    open:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+    del:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>',
+    expand:
+      '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
+  };
+
+  function getImageToolbar() {
+    let bar = document.getElementById('imgToolbar');
+    if (bar) return bar;
+    bar = document.createElement('div');
+    bar.className = 'img-toolbar';
+    bar.id = 'imgToolbar';
+    const mk = (icon, danger, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'img-tb-btn' + (danger ? ' danger' : '');
+      b.innerHTML = icon;
+      // Prevent the click from bubbling into the block (which would enter edit).
+      b.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (toolbarImg) fn(toolbarImg);
+      });
+      return b;
+    };
+    bar._btnZoomOut = mk(TB_ICONS.zoomOut, false, (img) => zoomImage(img, 1 / 1.2));
+    bar._btnZoomIn = mk(TB_ICONS.zoomIn, false, (img) => zoomImage(img, 1.2));
+    bar._btnExpand = mk(TB_ICONS.expand, false, (img) => openImageLightbox(img));
+    bar._btnCopy = mk(TB_ICONS.copy, false, (img) => copyImageToClipboard(img));
+    bar._btnOpen = mk(TB_ICONS.open, false, (img) => revealImageLocation(img));
+    bar._btnDelete = mk(TB_ICONS.del, true, (img) => deleteImageFromWysiwyg(img));
+    [bar._btnZoomOut, bar._btnZoomIn, bar._btnExpand, bar._btnCopy, bar._btnOpen, bar._btnDelete].forEach((b) => bar.appendChild(b));
+    bar.addEventListener('mouseenter', cancelToolbarHide);
+    bar.addEventListener('mouseleave', scheduleToolbarHide);
+    window.addEventListener('resize', hideImageToolbar);
+    document.body.appendChild(bar);
+    return bar;
+  }
+
+  function positionImageToolbar(bar, img) {
+    if (!bar || !img) return;
+    const r = img.getBoundingClientRect();
+    const bodyEl = el('sectionBody');
+    const bounds = bodyEl ? bodyEl.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    // Hide when the image is scrolled out of the editor viewport.
+    if (r.bottom < bounds.top || r.top > bounds.bottom) {
+      hideImageToolbar();
+      return;
+    }
+    const bw = bar.offsetWidth;
+    const bh = bar.offsetHeight;
+    let top = r.top - bh - 4;
+    if (top < bounds.top + 2) top = r.top + 4; // overlay just inside the image top
+    const left = Math.max(6, Math.min(r.left, window.innerWidth - bw - 6));
+    bar.style.left = Math.round(left) + 'px';
+    bar.style.top = Math.round(top) + 'px';
+  }
+
+  function showImageToolbar(img) {
+    const blk = img && img.closest ? img.closest('.md-block') : null;
+    // While a block's Markdown source is open, editing happens in the textarea;
+    // don't overlay the toolbar (its zoom would desync from the source text).
+    if (blk && blk.classList.contains('editing')) return;
+    cancelToolbarHide();
+    toolbarImg = img;
+    const bar = getImageToolbar();
+    const zh = lang === 'zh';
+    bar._btnZoomOut.title = zh ? '縮小' : 'Zoom out';
+    bar._btnZoomIn.title = zh ? '放大' : 'Zoom in';
+    bar._btnExpand.title = zh ? '燈箱檢視（Ctrl+點按）' : 'Lightbox view (Ctrl+click)';
+    bar._btnCopy.title = zh ? '複製到剪貼簿' : 'Copy to clipboard';
+    bar._btnOpen.title = zh ? '開啟圖片位置' : 'Open image location';
+    bar._btnDelete.title = zh ? '刪除（檔案＋語法）' : 'Delete (file + Markdown)';
+    bar.classList.add('visible');
+    bar.style.display = 'flex';
+    positionImageToolbar(bar, img);
+  }
+
+  function hideImageToolbar() {
+    const bar = document.getElementById('imgToolbar');
+    if (bar) {
+      bar.classList.remove('visible');
+      bar.style.display = 'none';
+    }
+    toolbarImg = null;
+  }
+
+  function scheduleToolbarHide() {
+    cancelToolbarHide();
+    toolbarHideTimer = setTimeout(hideImageToolbar, 180);
+  }
+
+  function cancelToolbarHide() {
+    if (toolbarHideTimer) {
+      clearTimeout(toolbarHideTimer);
+      toolbarHideTimer = null;
+    }
+  }
+
+  // Current effective pixel width of an image (explicit style width, else the
+  // width it currently renders at).
+  function imageWidthPx(img) {
+    const styled = parseInt(img.style.width, 10);
+    if (Number.isFinite(styled) && styled > 0) return styled;
+    const r = img.getBoundingClientRect();
+    if (r.width) return Math.round(r.width);
+    return img.naturalWidth || 320;
+  }
+
+  // Store an explicit pixel width in the Markdown for the image whose path is
+  // `rel`, as its title: ![alt](rel "w=NNN"). Portable (degrades to a tooltip).
+  function setImageWidthInMarkdown(md, rel, width) {
+    const esc = String(rel).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp('(!\\[[^\\]]*\\]\\(\\s*' + esc + ')(?:\\s+"[^"]*")?(\\s*\\))', 'g');
+    return String(md).replace(re, '$1 "w=' + width + '"$2');
+  }
+
+  // Zoom an image by a factor and persist the new width into the block's
+  // Markdown source so it survives reloads / export.
+  function zoomImage(img, factor) {
+    const block = img && img.closest ? img.closest('.md-block') : null;
+    const rel = img && img.dataset ? img.dataset.rel : '';
+    if (!block || !rel) return;
+    let next = Math.round(imageWidthPx(img) * factor);
+    next = Math.max(48, Math.min(2400, next));
+    img.style.width = next + 'px';
+    img.style.maxWidth = 'none';
+    block.dataset.src = setImageWidthInMarkdown(block.dataset.src || '', rel, next);
+    syncContentFromBlocks(wysContainerOf(block), activeSection(activeProject()));
+    const bar = document.getElementById('imgToolbar');
+    if (bar && toolbarImg === img) positionImageToolbar(bar, img);
+  }
+
+  // Reveal an inserted image in the OS file manager, selecting the file.
+  async function revealImageLocation(img) {
+    const rel = img && img.dataset ? img.dataset.rel : '';
+    if (!rel) return;
+    try {
+      const res = await api.revealImage(Object.assign({}, imageDescriptor(activeProject()), { rel }));
+      if (!res || !res.ok) {
+        toast((lang === 'zh' ? '無法開啟位置：' : 'Cannot open location: ') + ((res && res.error) || ''), 'error');
+      }
+    } catch (err) {
+      toast((lang === 'zh' ? '無法開啟位置：' : 'Cannot open location: ') + (err && err.message ? err.message : err), 'error');
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Image lightbox: Ctrl/Cmd + click (or the toolbar expand button) opens the
+  // image full-screen with wheel-zoom and drag-to-pan. Esc / backdrop closes.
+  // ------------------------------------------------------------------
+  let lbEls = null;
+  let lbScale = 1;
+  let lbTx = 0;
+  let lbTy = 0;
+
+  function applyLbTransform() {
+    if (!lbEls) return;
+    lbEls.img.style.transform = 'translate(' + lbTx + 'px, ' + lbTy + 'px) scale(' + lbScale + ')';
+    lbEls.img.classList.toggle('zoomed', lbScale > 1);
+  }
+
+  function updateLbZoom() {
+    if (lbEls) lbEls.zoom.textContent = Math.round(lbScale * 100) + '%';
+  }
+
+  function lbReset() {
+    lbScale = 1;
+    lbTx = 0;
+    lbTy = 0;
+    applyLbTransform();
+    updateLbZoom();
+  }
+
+  function lbZoomBy(factor) {
+    const next = Math.max(1, Math.min(8, lbScale * factor));
+    const ratio = next / lbScale;
+    lbTx *= ratio;
+    lbTy *= ratio;
+    lbScale = next;
+    if (lbScale === 1) {
+      lbTx = 0;
+      lbTy = 0;
+    }
+    applyLbTransform();
+    updateLbZoom();
+  }
+
+  function onLbWheel(e) {
+    e.preventDefault();
+    const rect = lbEls.stage.getBoundingClientRect();
+    const cx = e.clientX - (rect.left + rect.width / 2);
+    const cy = e.clientY - (rect.top + rect.height / 2);
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const next = Math.max(1, Math.min(8, lbScale * factor));
+    const ratio = next / lbScale;
+    lbTx = cx - (cx - lbTx) * ratio;
+    lbTy = cy - (cy - lbTy) * ratio;
+    lbScale = next;
+    if (lbScale === 1) {
+      lbTx = 0;
+      lbTy = 0;
+    }
+    applyLbTransform();
+    updateLbZoom();
+  }
+
+  function onLbImgDown(e) {
+    if (lbScale <= 1) return;
+    e.preventDefault();
+    const sx = e.clientX - lbTx;
+    const sy = e.clientY - lbTy;
+    lbEls.img.classList.add('grabbing');
+    const move = (ev) => {
+      lbTx = ev.clientX - sx;
+      lbTy = ev.clientY - sy;
+      applyLbTransform();
+    };
+    const up = () => {
+      if (lbEls) lbEls.img.classList.remove('grabbing');
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  }
+
+  function onLbKey(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeLightbox();
+    } else if (e.key === '+' || e.key === '=') {
+      e.preventDefault();
+      lbZoomBy(1.3);
+    } else if (e.key === '-' || e.key === '_') {
+      e.preventDefault();
+      lbZoomBy(1 / 1.3);
+    } else if (e.key === '0') {
+      e.preventDefault();
+      lbReset();
+    }
+  }
+
+  function buildLightbox() {
+    if (lbEls) return lbEls;
+    const overlay = document.createElement('div');
+    overlay.className = 'lightbox';
+    overlay.id = 'imgLightbox';
+
+    const bar = document.createElement('div');
+    bar.className = 'lightbox-bar';
+    const zoom = document.createElement('span');
+    zoom.className = 'lb-zoom';
+    const RESET_ICON =
+      '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>';
+    const CLOSE_ICON =
+      '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
+    const mkBtn = (icon, act) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lb-btn' + (act === 'close' ? ' lb-close' : '');
+      b.innerHTML = icon;
+      b.dataset.act = act;
+      return b;
+    };
+    bar.appendChild(mkBtn(TB_ICONS.zoomOut, 'zoomout'));
+    bar.appendChild(zoom);
+    bar.appendChild(mkBtn(TB_ICONS.zoomIn, 'zoomin'));
+    bar.appendChild(mkBtn(RESET_ICON, 'reset'));
+    bar.appendChild(mkBtn(CLOSE_ICON, 'close'));
+
+    const stage = document.createElement('div');
+    stage.className = 'lightbox-stage';
+    const img = document.createElement('img');
+    img.className = 'lightbox-img';
+    img.draggable = false;
+    stage.appendChild(img);
+
+    overlay.appendChild(bar);
+    overlay.appendChild(stage);
+    document.body.appendChild(overlay);
+
+    bar.addEventListener('mousedown', (e) => {
+      const btn = e.target && e.target.closest ? e.target.closest('.lb-btn') : null;
+      if (!btn) return;
+      e.preventDefault();
+      const act = btn.dataset.act;
+      if (act === 'close') closeLightbox();
+      else if (act === 'zoomin') lbZoomBy(1.3);
+      else if (act === 'zoomout') lbZoomBy(1 / 1.3);
+      else if (act === 'reset') lbReset();
+    });
+    stage.addEventListener('mousedown', (e) => {
+      if (e.target === stage) closeLightbox();
+    });
+    stage.addEventListener('wheel', onLbWheel, { passive: false });
+    img.addEventListener('mousedown', onLbImgDown);
+    img.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      if (lbScale > 1) lbReset();
+      else lbZoomBy(2);
+    });
+
+    lbEls = { overlay, stage, img, zoom };
+    return lbEls;
+  }
+
+  function showLightbox(src, alt) {
+    closeImageContextMenu();
+    closeTextContextMenu();
+    hideImageToolbar();
+    const els = buildLightbox();
+    els.img.src = src;
+    els.img.alt = alt || '';
+    lbReset();
+    els.overlay.classList.add('open');
+    document.addEventListener('keydown', onLbKey);
+  }
+
+  function closeLightbox() {
+    if (lbEls) lbEls.overlay.classList.remove('open');
+    document.removeEventListener('keydown', onLbKey);
+  }
+
+  // Resolve an image element's source to a data URL and show it in the lightbox.
+  async function openImageLightbox(img) {
+    if (!img) return;
+    let src = img.currentSrc || img.src || '';
+    if (!/^(data:|https?:)/i.test(src) && img.dataset && img.dataset.rel) {
+      try {
+        const res = await api.readImageDataUrl(
+          Object.assign({}, imageDescriptor(activeProject()), { rel: img.dataset.rel })
+        );
+        if (res && res.ok) src = res.dataUrl;
+      } catch (_e) {
+        /* ignore */
+      }
+    }
+    if (!src) return;
+    showLightbox(src, img.getAttribute('alt') || '');
   }
 
   // ------------------------------------------------------------------
@@ -1302,13 +2297,20 @@
   }
 
   async function doExport() {
+    if (!activeProject()) return;
     const btn = el('btnExport');
     btn.classList.add('loading');
     try {
+      // Capture any paragraph open for editing before reading the payload.
+      commitEditingBlock(wysContainer());
+      const originalId = state.activeProjectId;
       const res = await api.exportPrompt(exportPayload());
       if (res && res.ok) {
         showResult(res);
         toast(`${t('toast.exportOk')} ${res.folder}`, 'success');
+        // Re-open the exported folder as a disk-backed project and close the
+        // original draft tab, so further edits are saved back to that folder.
+        await reopenExportedProject(res.path, originalId);
       } else if (res && res.error === 'EMPTY') {
         toast(t('toast.exportEmpty'), 'error');
       } else {
@@ -1322,6 +2324,7 @@
   }
 
   async function doExportSingle() {
+    commitEditingBlock(wysContainer());
     const p = activeProject();
     const s = activeSection(p);
     if (!s) return;
@@ -1345,7 +2348,7 @@
 
   async function doSave() {
     const p = activeProject();
-    if (!p.sourcePath) return;
+    if (!p || !p.sourcePath) return;
     const btn = el('btnSave');
     btn.classList.add('loading');
     try {
@@ -1407,7 +2410,8 @@
 
   // Turn loaded project data (from the dialog or an Explorer hand-off) into a
   // new in-app project tab. Returns false when the folder held no sections.
-  function applyLoadedProject(d) {
+  function applyLoadedProject(d, opts) {
+    opts = opts || {};
     if (!d || !Array.isArray(d.sections) || !d.sections.length) {
       toast(t('toast.openEmpty'), 'error');
       return false;
@@ -1439,7 +2443,7 @@
     state.activeProjectId = proj.id;
     saveState();
     renderAll();
-    toast(t('toast.openOk'), 'success');
+    if (!opts.silent) toast(t('toast.openOk'), 'success');
     return true;
   }
 
@@ -1477,6 +2481,36 @@
     applyLoadedProject(res.project || {});
   }
 
+  // Remove a project tab by id (never the last remaining one), keeping a valid
+  // active tab afterwards.
+  function removeProjectById(id) {
+    if (!id) return;
+    const idx = state.projects.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    const wasActive = state.activeProjectId === id;
+    state.projects.splice(idx, 1);
+    if (wasActive) {
+      state.activeProjectId = state.projects.length ? state.projects[Math.max(0, idx - 1)].id : null;
+    }
+    saveState();
+    renderAll();
+  }
+
+  // After a successful export, re-open the exported folder as a disk-backed
+  // project (so further edits use Save) and close the original draft tab.
+  async function reopenExportedProject(dir, originalId) {
+    if (!dir || typeof api.openProjectPath !== 'function') return;
+    let res;
+    try {
+      res = await api.openProjectPath(dir);
+    } catch (_e) {
+      return; // keep the original tab open if re-opening failed
+    }
+    if (!res || !res.ok || !res.project) return;
+    const ok = applyLoadedProject(res.project, { silent: true });
+    if (ok) removeProjectById(originalId);
+  }
+
   // ------------------------------------------------------------------
   // Feature view switching
   // ------------------------------------------------------------------
@@ -1494,22 +2528,118 @@
     // field, so it never steals a textarea's native undo). Esc / outside click
     // dismisses the image right-click menu.
     document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
-        const ae = document.activeElement;
-        const inField = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT');
-        if (!inField && imageUndoStack.length) {
+      const ae = document.activeElement;
+      const inField = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT');
+
+      // Ctrl/Cmd+S saves the current project (commits any open paragraph first).
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S')) {
+        if (!document.querySelector('.modal-overlay:not(.hidden)')) {
           e.preventDefault();
-          undoImageDelete();
+          commitEditingBlock(wysContainer());
+          const proj = activeProject();
+          if (proj && proj.sourcePath) {
+            doSave();
+          } else {
+            toast(lang === 'zh' ? '新專案請先「輸出」以儲存到磁碟' : 'Export the new project first to save it to disk', 'info');
+          }
+          return;
         }
       }
-      if (e.key === 'Escape') closeImageContextMenu();
+
+      // Ctrl+Z outside text fields: undo paragraph / image deletions.
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
+        if (!inField) {
+          if (blockUndoStack.length) {
+            e.preventDefault();
+            undoBlockDelete();
+            return;
+          }
+          if (imageUndoStack.length) {
+            e.preventDefault();
+            undoImageDelete();
+            return;
+          }
+        }
+      }
+
+      // Paragraph navigation & actions (when not typing in a field).
+      if (!inField && state.previewMode) {
+        const container = wysContainer();
+        const modalOpen = document.querySelector('.modal-overlay:not(.hidden)');
+        if (container && !modalOpen) {
+          const hasSel = !!container.querySelector('.md-block.selected');
+          const canNav = hasSel || (lastActiveBlock && container.contains(lastActiveBlock));
+          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && canNav) {
+            e.preventDefault();
+            moveBlockSelection(container, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
+            return;
+          }
+          // Ctrl/Cmd+A selects every paragraph.
+          if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'a' || e.key === 'A')) {
+            const all = Array.from(container.querySelectorAll('.md-block'));
+            if (all.length) {
+              e.preventDefault();
+              all.forEach((b) => b.classList.add('selected'));
+              selAnchorBlock = all[0];
+              selFocusBlock = all[all.length - 1];
+              updateSelectionToolbar();
+              return;
+            }
+          }
+          if (hasSel) {
+            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+              e.preventDefault();
+              editSelectedBlock(container);
+              return;
+            }
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+              e.preventDefault();
+              deleteSelectedBlocks(container);
+              return;
+            }
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+              e.preventDefault();
+              copySelectedBlocks(container);
+              return;
+            }
+            if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+              e.preventDefault();
+              copySelectedBlocks(container);
+              deleteSelectedBlocks(container);
+              return;
+            }
+            if (e.key === 'Escape') {
+              clearBlockSelection(container);
+              return;
+            }
+          }
+        }
+      }
+
+      if (e.key === 'Escape') {
+        closeImageContextMenu();
+        closeTextContextMenu();
+        closeTabContextMenu();
+      }
     });
     document.addEventListener('mousedown', (e) => {
       const m = document.getElementById('imgCtxMenu');
       if (m && !m.contains(e.target)) closeImageContextMenu();
+      const tm = document.getElementById('txtCtxMenu');
+      if (tm && !tm.contains(e.target)) closeTextContextMenu();
+      const pm = document.getElementById('tabCtxMenu');
+      if (pm && !pm.contains(e.target)) closeTabContextMenu();
     });
-    document.addEventListener('scroll', closeImageContextMenu, true);
-    window.addEventListener('blur', closeImageContextMenu);
+    document.addEventListener('scroll', () => {
+      closeImageContextMenu();
+      closeTextContextMenu();
+      closeTabContextMenu();
+    }, true);
+    window.addEventListener('blur', () => {
+      closeImageContextMenu();
+      closeTextContextMenu();
+      closeTabContextMenu();
+    });
 
     el('btnExport').addEventListener('click', doExport);
     el('btnExportSingle').addEventListener('click', doExportSingle);
@@ -1578,7 +2708,8 @@
     el('setAbbrevLen').addEventListener('input', () => {
       const v = Math.max(1, Math.min(40, parseInt(el('setAbbrevLen').value, 10) || 30));
       state.abbrevLen = v;
-      el('setPreview').textContent = abbreviate(activeProject().fields.projectName || 'Example Prompt', v);
+      const pn = (activeProject() && activeProject().fields.projectName) || 'Example Prompt';
+      el('setPreview').textContent = abbreviate(pn, v);
       el('folderPreview').textContent = folderPreview();
       saveState();
     });
@@ -1593,7 +2724,8 @@
     el('setTheme').value = window.M2Themes.current();
     el('setAbbrevLen').value = state.abbrevLen;
     el('setTypeLen').value = state.typeLen;
-    el('setPreview').textContent = abbreviate(activeProject().fields.projectName || 'Example Prompt', state.abbrevLen);
+    const pn = (activeProject() && activeProject().fields.projectName) || 'Example Prompt';
+    el('setPreview').textContent = abbreviate(pn, state.abbrevLen);
   }
 
   // ------------------------------------------------------------------
@@ -1631,10 +2763,45 @@
   // ------------------------------------------------------------------
   // Render all
   // ------------------------------------------------------------------
+  // When no project is open, gray out the left fields panel and blank the
+  // editor (the "+" tab or Open Project brings a project back).
+  function applyNoProjectState(isEmpty) {
+    const layout = document.querySelector('.layout');
+    if (layout) layout.classList.toggle('no-project', isEmpty);
+    const panel = document.querySelector('.panel-form');
+    if (panel) {
+      panel.querySelectorAll('input, textarea, button').forEach((elm) => {
+        elm.disabled = isEmpty;
+      });
+    }
+    if (!isEmpty) return;
+    ['projectName', 'date', 'model', 'notes', 'outputBase'].forEach((id) => {
+      const elm = el(id);
+      if (elm) elm.value = '';
+    });
+    const up = el('usePrefix');
+    if (up) up.checked = false;
+    const cf = el('customFields');
+    if (cf) cf.innerHTML = '';
+    const fp = el('folderPreview');
+    if (fp) fp.textContent = '';
+    const st = el('sectionTabs');
+    if (st) st.innerHTML = '';
+    const sb = el('sectionBody');
+    if (sb) sb.innerHTML = '';
+    const counter = el('counter');
+    if (counter) counter.textContent = '';
+    hideImageToolbar();
+  }
+
   function renderAll() {
     renderProjectTabs();
-    renderFields();
-    renderSection();
+    const hasProject = !!activeProject();
+    applyNoProjectState(!hasProject);
+    if (hasProject) {
+      renderFields();
+      renderSection();
+    }
     updateSaveButton();
   }
 
@@ -1653,6 +2820,9 @@
       btn.className = 'snip-cat';
       btn.dataset.cat = cat;
       btn.textContent = cfg.label || cat;
+      // Don't steal focus from the editor, so opening a panel doesn't commit
+      // (and close) the paragraph currently being edited.
+      btn.addEventListener('mousedown', (e) => e.preventDefault());
       btn.addEventListener('click', () => toggleSnipPanel(cat));
       bar.appendChild(btn);
     });
@@ -1665,30 +2835,25 @@
 
   // Insert text into the active prompt editor at the cursor position.
   function insertSnippet(text) {
-    const ta = el('sectionBody') && el('sectionBody').querySelector('.log-input');
-    if (!ta) {
+    // Insert at the caret of the focused editor — a WYSIWYG paragraph being
+    // edited or the raw source editor. insertIntoEditor joins the textarea's
+    // native undo stack (Ctrl+Z) and fires 'input' to sync content / counter.
+    const ta = activeEditorTextarea();
+    if (ta) {
+      insertIntoEditor(ta, text);
+      return;
+    }
+    // WYSIWYG mode with no paragraph open for editing: append the snippet as a
+    // new block so it still lands in the current tab.
+    const s = activeSection();
+    if (!s) {
       toast(t('snip.noEditor'), 'error');
       return;
     }
-    ta.focus();
-    // Insert via execCommand so the change joins the textarea's native undo
-    // stack (Ctrl+Z undoes an inserted snippet just like typed text). The
-    // resulting 'input' event syncs content / counter / dirty state.
-    let inserted = false;
-    try {
-      inserted = document.execCommand('insertText', false, text);
-    } catch (_e) {
-      inserted = false;
-    }
-    if (!inserted) {
-      const start = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
-      const end = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : ta.value.length;
-      ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
-      const caret = start + text.length;
-      ta.selectionStart = caret;
-      ta.selectionEnd = caret;
-      ta.dispatchEvent(new Event('input', { bubbles: true }));
-    }
+    s.content = s.content && s.content.trim() ? s.content.replace(/\s*$/, '') + '\n\n' + text : text;
+    saveState();
+    renderSection();
+    refreshSectionTabDirty();
   }
 
   function savePanelGeom(cat, panel) {
@@ -1793,6 +2958,9 @@
       b.className = 'snip-item';
       b.textContent = it.label || it.text || '';
       b.title = it.text || '';
+      // Keep the editor focused (don't blur / commit the paragraph being edited)
+      // so the snippet inserts at the caret instead of a stale target.
+      b.addEventListener('mousedown', (e) => e.preventDefault());
       b.addEventListener('click', () => insertSnippet(it.text || ''));
       body.appendChild(b);
     });
@@ -2294,6 +3462,15 @@
     wireSettings();
     wireSnippets();
     wireSplitter('splitter', '.layout', '--left-width', 'leftWidth', 260, 640);
+
+    // Prevent the window from navigating to a file when one is dropped outside
+    // an editor drop target (the editors handle their own image drops).
+    window.addEventListener('dragover', (e) => {
+      if (dragHasFiles(e)) e.preventDefault();
+    });
+    window.addEventListener('drop', (e) => {
+      if (dragHasFiles(e)) e.preventDefault();
+    });
 
     await loadLang(state.lang || 'zh');
 
