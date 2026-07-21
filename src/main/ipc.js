@@ -376,10 +376,16 @@ function registerIpc(options) {
   });
 
   // Open an exported project folder (pick + read) so it can be edited again.
-  ipcMain.handle('project:open', async () => {
+  ipcMain.handle('project:open', async (_e, defaultPath) => {
     try {
+      const startDir = resolveOutputRoot(defaultPath);
+      try {
+        ensureDir(startDir);
+      } catch (_err) {
+        /* ignore */
+      }
       const win = BrowserWindow.getFocusedWindow();
-      const opts = { properties: ['openDirectory'], defaultPath: defaultOutputRoot() };
+      const opts = { properties: ['openDirectory'], defaultPath: startDir };
       const res = win
         ? await dialog.showOpenDialog(win, opts)
         : await dialog.showOpenDialog(opts);

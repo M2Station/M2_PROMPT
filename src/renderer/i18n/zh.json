@@ -6,7 +6,7 @@
   "btn.explorer": "檔案總管",
   "btn.explorer.title": "開啟輸出資料夾",
   "btn.openProject": "開啟專案",
-  "btn.openProject.title": "開啟已輸出的專案資料夾並載入編輯",
+  "btn.openProject.title": "開啟已輸出的專案資料夾並載入編輯（Alt+F）",
   "credit.by": "Powered by",
   "credit.title": "github.com/oahsiao",
 

@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('m2prompt', {
   openFolder: (targetPath) => ipcRenderer.invoke('prompt:openFolder', targetPath),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
   pickFolder: (defaultPath) => ipcRenderer.invoke('dialog:pickFolder', defaultPath),
-  openProject: () => ipcRenderer.invoke('project:open'),
+  openProject: (defaultPath) => ipcRenderer.invoke('project:open', defaultPath),
   openProjectPath: (dirPath) => ipcRenderer.invoke('project:openPath', dirPath),
   getInitialFolder: () => ipcRenderer.invoke('app:getInitialFolder'),
   onOpenProjectFolder: (cb) => {

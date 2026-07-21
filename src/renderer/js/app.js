@@ -2450,7 +2450,7 @@
   async function openProjectFolder() {
     let res;
     try {
-      res = await api.openProject();
+      res = await api.openProject(state.outputBase);
     } catch (e) {
       toast(t('toast.openErr') + e.message, 'error');
       return;
@@ -2542,6 +2542,15 @@
           } else {
             toast(lang === 'zh' ? '新專案請先「輸出」以儲存到磁碟' : 'Export the new project first to save it to disk', 'info');
           }
+          return;
+        }
+      }
+
+      // Alt+F opens a project folder (same as the Open Project button).
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyF') {
+        if (!document.querySelector('.modal-overlay:not(.hidden)')) {
+          e.preventDefault();
+          openProjectFolder();
           return;
         }
       }

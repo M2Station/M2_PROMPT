@@ -6,7 +6,7 @@
   "btn.explorer": "Explorer",
   "btn.explorer.title": "Open output folder",
   "btn.openProject": "Open Project",
-  "btn.openProject.title": "Open an exported project folder and load it for editing",
+  "btn.openProject.title": "Open an exported project folder and load it for editing (Alt+F)",
   "credit.by": "Powered by",
   "credit.title": "github.com/oahsiao",
 
