@@ -1599,16 +1599,48 @@
   function deleteSelectedBlocks(container) {
     const c = container || wysContainer();
     if (!c) return;
-    const sel = Array.from(c.querySelectorAll('.md-block.selected'));
+    const all = Array.from(c.querySelectorAll('.md-block'));
+    const sel = all.filter((b) => b.classList.contains('selected'));
     if (!sel.length) return;
     const s = activeSection();
     if (!s) return;
     const n = sel.length;
+    // Remember where focus should land afterwards: the slot of the first removed
+    // block, i.e. the paragraph that slides up into its place (clamped to the new
+    // last one when the tail was removed). Keeps Up/Down intuitive after a delete.
+    const targetIndex = all.indexOf(sel[0]);
     sel.forEach((b) => b.remove());
     syncContentFromBlocks(c, s);
     renderEditor();
+    selectBlockAtIndex(targetIndex);
     refreshSectionTabDirty();
     toast(lang === 'zh' ? `已删除 ${n} 個段落（Ctrl+Z 復原）` : `Deleted ${n} paragraph(s) (Ctrl+Z to undo)`, 'info');
+  }
+
+  // Merge the selected paragraphs into a single one. Their Markdown is joined
+  // with single newlines (a blank line would re-split them into separate
+  // blocks), so the result renders as one paragraph with soft line breaks.
+  function mergeSelectedBlocks(container) {
+    const c = container || wysContainer();
+    if (!c) return;
+    const all = Array.from(c.querySelectorAll('.md-block'));
+    const sel = all.filter((b) => b.classList.contains('selected'));
+    if (sel.length < 2) return;
+    const s = activeSection();
+    if (!s) return;
+    const n = sel.length;
+    const targetIndex = all.indexOf(sel[0]);
+    const mergedSrc = sel
+      .map((b) => (b.dataset.src || '').replace(/\s+$/, ''))
+      .filter((x) => x !== '')
+      .join('\n');
+    sel[0].dataset.src = mergedSrc;
+    sel.slice(1).forEach((b) => b.remove());
+    syncContentFromBlocks(c, s);
+    renderEditor();
+    selectBlockAtIndex(targetIndex);
+    refreshSectionTabDirty();
+    toast(lang === 'zh' ? `已合併 ${n} 個段落（Ctrl+Z 復原）` : `Merged ${n} paragraphs (Ctrl+Z to undo)`, 'info');
   }
 
   function getSelectionToolbar() {
@@ -1632,10 +1664,12 @@
     };
     bar._count = count;
     bar._btnCopy = mk('', () => copySelectedBlocks(wysContainer()));
+    bar._btnMerge = mk('', () => mergeSelectedBlocks(wysContainer()));
     bar._btnDelete = mk('danger', () => deleteSelectedBlocks(wysContainer()));
     bar._btnClear = mk('', () => clearBlockSelection(wysContainer()));
     bar.appendChild(count);
     bar.appendChild(bar._btnCopy);
+    bar.appendChild(bar._btnMerge);
     bar.appendChild(bar._btnDelete);
     bar.appendChild(bar._btnClear);
     document.body.appendChild(bar);
@@ -1655,6 +1689,7 @@
     const zh = lang === 'zh';
     bar._count.textContent = zh ? `已選取 ${n} 個段落` : `${n} selected`;
     bar._btnCopy.textContent = zh ? '複製' : 'Copy';
+    bar._btnMerge.textContent = zh ? '合併' : 'Merge';
     bar._btnDelete.textContent = zh ? '删除' : 'Delete';
     bar._btnClear.textContent = zh ? '取消' : 'Clear';
     bar.classList.add('open');
@@ -1675,11 +1710,13 @@
     else if (inDom(lastActiveBlock)) focus = lastActiveBlock;
 
     if (!focus) {
-      // Nothing to move from yet: select an edge block.
-      const edge = blocks[dir > 0 ? 0 : blocks.length - 1];
+      // No known selection yet (e.g. right after switching tabs): jump to an edge
+      // in the direction pressed -> Up = first paragraph, Down = last.
+      const edge = dir > 0 ? blocks[blocks.length - 1] : blocks[0];
       blocks.forEach((b) => b.classList.toggle('selected', b === edge));
       selAnchorBlock = edge;
       selFocusBlock = edge;
+      lastActiveBlock = edge;
       updateSelectionToolbar();
       edge.scrollIntoView({ block: 'nearest' });
       return;
@@ -1698,6 +1735,23 @@
       selFocusBlock = target;
       updateSelectionToolbar();
     }
+    target.scrollIntoView({ block: 'nearest' });
+  }
+
+  // Select the paragraph at a given index (clamped to range) after a structural
+  // change such as a delete, so keyboard focus lands where the user expects and
+  // Up/Down keep working from there.
+  function selectBlockAtIndex(index, container) {
+    const c = container || wysContainer();
+    if (!c) return;
+    const blocks = Array.from(c.querySelectorAll('.md-block'));
+    if (!blocks.length) return;
+    const target = blocks[Math.max(0, Math.min(index, blocks.length - 1))];
+    blocks.forEach((b) => b.classList.toggle('selected', b === target));
+    selAnchorBlock = target;
+    selFocusBlock = target;
+    lastActiveBlock = target;
+    updateSelectionToolbar();
     target.scrollIntoView({ block: 'nearest' });
   }
 
@@ -2638,8 +2692,10 @@
         const modalOpen = document.querySelector('.modal-overlay:not(.hidden)');
         if (container && !modalOpen) {
           const hasSel = !!container.querySelector('.md-block.selected');
-          const canNav = hasSel || (lastActiveBlock && container.contains(lastActiveBlock));
-          if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && canNav) {
+          // Arrows always navigate paragraphs in WYSIWYG. When nothing is selected
+          // yet (e.g. just after switching tabs), moveBlockSelection picks an edge:
+          // Up -> first paragraph, Down -> last.
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault();
             moveBlockSelection(container, e.key === 'ArrowDown' ? 1 : -1, e.shiftKey);
             return;
