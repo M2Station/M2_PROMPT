@@ -745,6 +745,7 @@
     if (preview) renderWysiwyg(wysBox, s, imageDescriptor(p));
     updatePreviewToggle();
     updateSelectionToolbar();
+    recordHistory();
   }
 
   // ------------------------------------------------------------------
@@ -1295,6 +1296,81 @@
     el('counter').textContent = counterText(s.content);
     saveState();
     refreshSectionTabDirty();
+    recordHistory();
+  }
+
+  // ------------------------------------------------------------------
+  // Editor undo history: per-section content snapshots (keeps 60, >= 10 steps).
+  // Native textarea undo still handles fine-grained typing while a block or the
+  // source box is focused; this covers structural ops (add / delete / paste
+  // image / format / zoom) when Ctrl+Z is pressed outside a text field.
+  // ------------------------------------------------------------------
+  const sectionHistories = new Map(); // sectionId -> { stack: [content], pos }
+  const deletedImageBytes = new Map(); // rel -> { base64, desc }
+  let restoringHistory = false;
+
+  function recordHistory() {
+    if (restoringHistory) return;
+    const s = activeSection();
+    if (!s) return;
+    const h = sectionHistories.get(s.id);
+    if (!h) {
+      sectionHistories.set(s.id, { stack: [s.content], pos: 0 });
+      return;
+    }
+    if (h.stack[h.pos] === s.content) return;
+    h.stack = h.stack.slice(0, h.pos + 1);
+    h.stack.push(s.content);
+    if (h.stack.length > 60) h.stack.shift();
+    h.pos = h.stack.length - 1;
+  }
+
+  // Re-write any deleted image files referenced by restored content.
+  function restoreDeletedImages(content) {
+    if (!deletedImageBytes.size) return;
+    const re = /!\[[^\]]*\]\(\s*([^)\s]+)/g;
+    const seen = new Set();
+    let m;
+    while ((m = re.exec(content)) !== null) {
+      const rel = m[1];
+      if (seen.has(rel)) continue;
+      seen.add(rel);
+      const entry = deletedImageBytes.get(rel);
+      if (entry && entry.base64) {
+        api.restoreImage(Object.assign({}, entry.desc, { rel, base64: entry.base64 })).catch(() => {});
+      }
+    }
+  }
+
+  function applyHistoryState(h) {
+    const s = activeSection();
+    if (!s) return false;
+    restoringHistory = true;
+    s.content = h.stack[h.pos];
+    restoreDeletedImages(s.content);
+    saveState();
+    renderEditor();
+    refreshSectionTabDirty();
+    restoringHistory = false;
+    return true;
+  }
+
+  function undoEditor() {
+    const s = activeSection();
+    if (!s) return false;
+    const h = sectionHistories.get(s.id);
+    if (!h || h.pos <= 0) return false;
+    h.pos -= 1;
+    return applyHistoryState(h);
+  }
+
+  function redoEditor() {
+    const s = activeSection();
+    if (!s) return false;
+    const h = sectionHistories.get(s.id);
+    if (!h || h.pos >= h.stack.length - 1) return false;
+    h.pos += 1;
+    return applyHistoryState(h);
   }
 
   function commitBlock(b, s, desc) {
@@ -1412,7 +1488,6 @@
   let selAnchorBlock = null;
   let lastActiveBlock = null;
   let selFocusBlock = null;
-  const blockUndoStack = [];
 
   function wysContainer() {
     return el('sectionBody') && el('sectionBody').querySelector('.md-wys');
@@ -1507,24 +1582,11 @@
     const s = activeSection();
     if (!s) return;
     const n = sel.length;
-    blockUndoStack.push({ section: s, content: s.content });
-    if (blockUndoStack.length > 30) blockUndoStack.shift();
     sel.forEach((b) => b.remove());
     syncContentFromBlocks(c, s);
     renderEditor();
     refreshSectionTabDirty();
     toast(lang === 'zh' ? `已删除 ${n} 個段落（Ctrl+Z 復原）` : `Deleted ${n} paragraph(s) (Ctrl+Z to undo)`, 'info');
-  }
-
-  function undoBlockDelete() {
-    const entry = blockUndoStack.pop();
-    if (!entry) return false;
-    entry.section.content = entry.content;
-    saveState();
-    renderEditor();
-    refreshSectionTabDirty();
-    toast(lang === 'zh' ? '已復原段落' : 'Paragraphs restored', 'success');
-    return true;
   }
 
   function getSelectionToolbar() {
@@ -1638,7 +1700,6 @@
   // ------------------------------------------------------------------
   // Image right-click menu: copy to clipboard / delete (Ctrl+Z to undo)
   // ------------------------------------------------------------------
-  const imageUndoStack = [];
 
   function closeImageContextMenu() {
     const m = document.getElementById('imgCtxMenu');
@@ -1775,11 +1836,6 @@
     const p = activeProject();
     const s = activeSection(p);
     const desc = imageDescriptor(p);
-    const block = img.closest ? img.closest('.md-block') : null;
-    let blockIndex = 0;
-    if (block && block.parentNode) {
-      blockIndex = Array.from(block.parentNode.querySelectorAll('.md-block')).indexOf(block);
-    }
     let base64 = null;
     try {
       const res = await api.deleteImage(Object.assign({}, desc, { rel }));
@@ -1787,31 +1843,17 @@
     } catch (_e) {
       /* file may already be gone - still remove the markdown */
     }
+    if (base64) {
+      deletedImageBytes.set(rel, { base64, desc });
+      if (deletedImageBytes.size > 30) {
+        deletedImageBytes.delete(deletedImageBytes.keys().next().value);
+      }
+    }
     s.content = removeImageMarkdown(s.content, rel);
     saveState();
-    imageUndoStack.push({ rel, base64, desc, blockIndex, section: s });
-    if (imageUndoStack.length > 20) imageUndoStack.shift();
     renderEditor();
     refreshSectionTabDirty();
     toast(lang === 'zh' ? '已刪除圖片（Ctrl+Z 可還原）' : 'Image deleted (Ctrl+Z to undo)', 'info');
-  }
-
-  function undoImageDelete() {
-    const entry = imageUndoStack.pop();
-    if (!entry) return false;
-    if (entry.base64) {
-      api.restoreImage(Object.assign({}, entry.desc, { rel: entry.rel, base64: entry.base64 })).catch(() => {});
-    }
-    const s = entry.section;
-    const blocks = window.M2MD && window.M2MD.splitBlocks ? window.M2MD.splitBlocks(s.content) : s.content ? [s.content] : [];
-    const idx = Math.min(Math.max(0, entry.blockIndex), blocks.length);
-    blocks.splice(idx, 0, '![](' + entry.rel + ')');
-    s.content = blocks.join('\n\n');
-    saveState();
-    renderEditor();
-    refreshSectionTabDirty();
-    toast(lang === 'zh' ? '已還原圖片' : 'Image restored', 'success');
-    return true;
   }
 
   // ------------------------------------------------------------------
@@ -2555,19 +2597,16 @@
         }
       }
 
-      // Ctrl+Z outside text fields: undo paragraph / image deletions.
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === 'z' || e.key === 'Z')) {
+      // Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) outside text fields: undo / redo the
+      // editor content (paragraph & image structural ops). Inside a textarea the
+      // browser's native per-keystroke undo handles Ctrl+Z instead.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
         if (!inField) {
-          if (blockUndoStack.length) {
-            e.preventDefault();
-            undoBlockDelete();
-            return;
-          }
-          if (imageUndoStack.length) {
-            e.preventDefault();
-            undoImageDelete();
-            return;
-          }
+          const redo = e.shiftKey || e.key === 'y' || e.key === 'Y';
+          e.preventDefault();
+          if (redo) redoEditor();
+          else undoEditor();
+          return;
         }
       }
 
