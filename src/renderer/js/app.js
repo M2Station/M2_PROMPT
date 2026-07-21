@@ -938,12 +938,6 @@
   function handleEditorKeydown(e, ta) {
     const mod = e.ctrlKey || e.metaKey;
 
-    if (mod && e.key === 'Enter') {
-      e.preventDefault();
-      doExport();
-      return;
-    }
-
     if (mod && !e.shiftKey && !e.altKey) {
       if (e.key === '=' || e.key === '+') { e.preventDefault(); bumpEditorFont(1); return; }
       if (e.key === '-' || e.key === '_') { e.preventDefault(); bumpEditorFont(-1); return; }
@@ -1188,9 +1182,20 @@
 
       if (b.classList.contains('editing')) return;
 
-      // Plain press: a click edits this paragraph; a drag selects across them.
+      // Plain press: a click selects this paragraph; a drag selects across them
+      // (double-click edits it).
       e.preventDefault();
       beginBlockPress(e, b, container, s, desc);
+    });
+
+    // Double-click enters edit mode on this paragraph.
+    b.addEventListener('dblclick', (e) => {
+      if (e.button !== undefined && e.button !== 0) return;
+      if (b.classList.contains('editing')) return;
+      e.preventDefault();
+      const container = wysContainerOf(b);
+      clearBlockSelection(container);
+      enterBlockEdit(b, s, desc);
     });
     return b;
   }
@@ -1277,7 +1282,13 @@
     b.classList.remove('editing');
     b.classList.remove('editing-image');
     const ta = b.querySelector('.md-block-edit');
-    if (ta) ta.remove();
+    if (ta) {
+      // Removing a focused textarea fires 'blur' -> commitBlock synchronously,
+      // which would re-enter and try to remove the same node again (throwing
+      // "node to be removed is no longer a child"). Suppress that commit.
+      b.__tearingDown = true;
+      try { ta.remove(); } finally { b.__tearingDown = false; }
+    }
     let rendered = b.querySelector('.md-rendered');
     if (!rendered) {
       rendered = document.createElement('div');
@@ -1374,6 +1385,10 @@
   }
 
   function commitBlock(b, s, desc) {
+    // Guard against re-entrancy: tearing down the textarea (renderBlockView /
+    // b.remove()) blurs it, which fires this same handler mid-removal. Also skip
+    // while an async image paste is in-flight on this block (see handleBlockPaste).
+    if (b.__tearingDown || b.__pasting) return;
     const ta = b.querySelector('.md-block-edit');
     if (!ta) return;
     const container = wysContainerOf(b);
@@ -1394,16 +1409,30 @@
   }
 
   function handleBlockKeydown(e, ta, b, s, desc) {
+    // Ctrl/Cmd+Enter ends the current paragraph: commit it and start a new one
+    // below (an empty paragraph is just committed / left).
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      doExport();
+      const before = ta.value.replace(/\s+$/, '');
+      if (before === '') {
+        ta.blur();
+        return;
+      }
+      const container = wysContainerOf(b);
+      b.dataset.src = before;
+      renderBlockView(b, desc);
+      const nb = makeBlockEl('', s, desc);
+      if (b.nextSibling) container.insertBefore(nb, b.nextSibling);
+      else container.appendChild(nb);
+      syncContentFromBlocks(container, s);
+      enterBlockEdit(nb, s, desc);
       return;
     }
     if (e.key === 'Escape') {
       e.preventDefault();
       ta.blur();
       // Select the paragraph you just left so Up / Down navigate from here and
-      // Enter re-enters it.
+      // Enter / F2 re-enter it.
       const container = wysContainerOf(b);
       if (container && container.contains(b)) {
         clearBlockSelection(container);
@@ -1415,33 +1444,9 @@
       }
       return;
     }
-    if (e.key === 'Enter' && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey && !e.isComposing) {
-      const val = ta.value;
-      const pos = ta.selectionStart;
-      const lineStart = val.lastIndexOf('\n', pos - 1) + 1;
-      const line = val.slice(lineStart, pos);
-      if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
-        if (handleEnterList(ta)) {
-          e.preventDefault();
-          return;
-        }
-      }
-      const looksMultiline = /^\s*(```|~~~)/.test(val) || (/\|/.test(val) && /\n/.test(val));
-      const atEnd = pos === ta.selectionEnd && pos === val.length;
-      if (atEnd && !looksMultiline) {
-        e.preventDefault();
-        const before = val.replace(/\n+$/, '');
-        if (before.trim() === '') return;
-        const container = wysContainerOf(b);
-        b.dataset.src = before;
-        renderBlockView(b, desc);
-        const nb = makeBlockEl('', s, desc);
-        if (b.nextSibling) container.insertBefore(nb, b.nextSibling);
-        else container.appendChild(nb);
-        syncContentFromBlocks(container, s);
-        enterBlockEdit(nb, s, desc);
-      }
-      return;
+    // Plain Enter is a line break within the paragraph (Ctrl+Enter ends it).
+    if (e.key === 'Enter' && !(e.ctrlKey || e.metaKey) && !e.isComposing) {
+      return; // let the textarea insert a newline
     }
     handleEditorKeydown(e, ta);
   }
@@ -1452,25 +1457,38 @@
     const info = extractImageFromClipboard(e);
     if (!info) return;
     e.preventDefault();
+    // Capture the container now (while `b` is connected) and keep this block
+    // alive through the async save. Otherwise a blur during the await would let
+    // commitBlock commit/remove `b`, and the resumed paste would then operate on
+    // a detached node -> "node to be removed is no longer a child ... moved in a
+    // 'blur' event handler".
+    const container = wysContainerOf(b);
+    b.__pasting = true;
     try {
       const res = await saveClipboardImage(info);
       if (!res || !res.ok) {
         toast(t('toast.imgErr') + ((res && res.error) || ''), 'error');
         return;
       }
-      const container = wysContainerOf(b);
       b.dataset.src = ta.value;
       renderBlockView(b, desc);
+      const hadText = (b.dataset.src || '').trim() !== '';
       const imgBlock = makeBlockEl('![](' + res.rel + ')', s, desc);
       const nextBlock = makeBlockEl('', s, desc);
       const anchor = b.nextSibling;
-      container.insertBefore(imgBlock, anchor);
-      container.insertBefore(nextBlock, anchor);
+      if (container) {
+        container.insertBefore(imgBlock, anchor);
+        container.insertBefore(nextBlock, anchor);
+      }
+      // If the block we pasted into was empty, drop it so no blank line remains.
+      if (!hadText) b.remove();
       syncContentFromBlocks(container, s);
       enterBlockEdit(nextBlock, s, desc);
       toast(t('toast.imgOk') + res.rel, 'success');
     } catch (err) {
       toast(t('toast.imgErr') + (err && err.message ? err.message : err), 'error');
+    } finally {
+      b.__pasting = false;
     }
   }
 
@@ -1554,9 +1572,13 @@
       document.removeEventListener('mousemove', move);
       document.removeEventListener('mouseup', up);
       if (!dragging) {
+        // A single click selects the paragraph (double-click edits it).
         clearBlockSelection(container);
+        block.classList.add('selected');
         selAnchorBlock = block;
-        enterBlockEdit(block, s, desc);
+        selFocusBlock = block;
+        lastActiveBlock = block;
+        updateSelectionToolbar();
       }
     };
     document.addEventListener('mousemove', move);
@@ -2635,7 +2657,7 @@
             }
           }
           if (hasSel) {
-            if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (e.key === 'F2' || (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey)) {
               e.preventDefault();
               editSelectedBlock(container);
               return;
@@ -2717,16 +2739,6 @@
     });
 
     el('btnLang').addEventListener('click', () => loadLang(lang === 'zh' ? 'en' : 'zh'));
-
-    document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-        const outputVisible = el('view-output').classList.contains('active');
-        if (outputVisible) {
-          e.preventDefault();
-          doExport();
-        }
-      }
-    });
   }
 
   // ------------------------------------------------------------------

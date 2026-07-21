@@ -59,8 +59,6 @@
   "btn.clear.title": "Clear current tab content",
   "tab.rename.title": "Double-click to rename tab",
 
-  "kbd.pre": "Tip: ",
-  "kbd.post": " to export quickly",
   "btn.export": "Export",
   "btn.save": "Save",
   "btn.openFolder": "Open Folder",
