@@ -1,0 +1,109 @@
+# Fast pre-merge status check for pull requests. Complements the heavier
+# `build.yml` (which packages the Windows app) with quick, dependency-light
+# validation that catches the usual PR breakers in seconds:
+#   1. JS syntax    - `node --check` on every .js under src/ and scripts/
+#   2. JSON valid   - package.json, package-lock.json, snippets.json, i18n/*.json
+#   3. Version sync - package.json vs package-lock.json (npm ci fails if they drift)
+#   4. Lockfile     - `npm ci --ignore-scripts` proves the lockfile installs cleanly
+#                     (--ignore-scripts skips Electron's ~110 MB binary download)
+#
+# Make this a REQUIRED check: Settings -> Branches -> branch protection rule for
+# `main` -> "Require status checks to pass before merging" -> select "Verify PR".
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs when new commits are pushed to the same PR.
+concurrency:
+  group: pr-checks-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  verify:
+    name: Verify PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: JS syntax check (node --check)
+        shell: bash
+        run: |
+          fail=0
+          count=0
+          while IFS= read -r -d '' f; do
+            count=$((count + 1))
+            if node --check "$f"; then
+              echo "OK   $f"
+            else
+              echo "FAIL $f"
+              fail=1
+            fi
+          done < <(find src scripts -type f -name '*.js' -print0)
+          echo "Checked $count JS file(s)."
+          if [ "$count" -eq 0 ]; then echo "No JS files found — unexpected."; exit 1; fi
+          exit $fail
+
+      - name: JSON validation
+        shell: bash
+        run: |
+          node -e '
+            const fs = require("fs"), path = require("path");
+            const files = ["package.json", "package-lock.json", "snippets.json"];
+            const i18nDir = path.join("src", "renderer", "i18n");
+            if (fs.existsSync(i18nDir)) {
+              for (const f of fs.readdirSync(i18nDir)) {
+                if (f.endsWith(".json")) files.push(path.join(i18nDir, f));
+              }
+            }
+            let bad = 0;
+            for (const f of files) {
+              if (!fs.existsSync(f)) { console.log("SKIP " + f + " (not found)"); continue; }
+              try { JSON.parse(fs.readFileSync(f, "utf8")); console.log("OK   " + f); }
+              catch (e) { console.log("FAIL " + f + ": " + e.message); bad = 1; }
+            }
+            process.exit(bad);
+          '
+
+      - name: Version consistency (package.json vs package-lock.json)
+        shell: bash
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            const lock = require("./package-lock.json");
+            const v = pkg.version;
+            const errs = [];
+            if (lock.version !== v) {
+              errs.push("package-lock.json version (" + lock.version + ") != package.json (" + v + ")");
+            }
+            const rootPkg = lock.packages && lock.packages[""] ? lock.packages[""].version : undefined;
+            if (rootPkg !== v) {
+              errs.push("package-lock.json packages[\"\"].version (" + rootPkg + ") != package.json (" + v + ")");
+            }
+            if (errs.length) {
+              console.error("Version mismatch — CI npm ci would fail:\n  " + errs.join("\n  "));
+              console.error("Fix: npm version " + v + " --no-git-tag-version (updates both files).");
+              process.exit(1);
+            }
+            console.log("Version consistent: " + v);
+          '
+
+      - name: Lockfile install check (npm ci, no Electron download)
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: npm ci --ignore-scripts
