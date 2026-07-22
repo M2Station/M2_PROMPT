@@ -1,6 +1,6 @@
 {
   "name": "m2-prompt-tool",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Fast prompt authoring, tracking and management - Electron desktop app",
   "author": "OA Hsiao",
   "license": "MIT",
