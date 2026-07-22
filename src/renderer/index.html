@@ -265,6 +265,22 @@
             <input id="setTypeLen" type="number" min="1" max="100" step="1" />
             <small data-i18n="settings.typeLen.note">分頁（檔名／子資料夾）的最大長度。</small>
           </div>
+          <div class="field update-field">
+            <label><span data-i18n="update.title">軟體更新</span> <span class="opt" data-i18n="update.opt">Update</span></label>
+            <div class="update-row">
+              <span class="update-current"><span data-i18n="update.current">目前版本</span>：<code id="updateCurrent">—</code></span>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnCheckUpdate" data-i18n="update.check">檢查更新</button>
+            </div>
+            <small class="update-status" id="updateStatus" data-i18n="update.note">從 GitHub Releases 檢查新版本。</small>
+            <div class="update-progress hidden" id="updateProgress">
+              <div class="update-progress-bar"><div class="update-progress-fill" id="updateProgressFill"></div></div>
+              <span class="update-progress-text" id="updateProgressText">0%</span>
+            </div>
+            <div class="update-actions hidden" id="updateActions">
+              <button type="button" class="btn btn-primary btn-sm" id="btnDownloadUpdate" data-i18n="update.download">下載並安裝</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="btnUpdatePage" data-i18n="update.viewPage">開啟發行頁</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

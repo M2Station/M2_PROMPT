@@ -12,6 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const { app, BrowserWindow, Menu } = require('electron');
 const { registerIpc } = require('./ipc');
+const updater = require('./update');
 
 let mainWindow = null;
 
@@ -118,6 +119,13 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'win32') app.setAppUserModelId('com.m2station.m2prompt');
     applyEditMenu();
     registerIpc({ getInitialFolder: () => initialFolder });
+    // Sweep any installer left over from a previous update (a running installer
+    // locks its file on Windows, so cleanup lands on the next launch).
+    try {
+      updater.cleanupUpdates();
+    } catch (_e) {
+      /* best-effort */
+    }
     createWindow();
 
     app.on('activate', () => {
