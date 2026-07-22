@@ -38,4 +38,14 @@ contextBridge.exposeInMainWorld('m2prompt', {
   restoreImage: (payload) => ipcRenderer.invoke('image:restore', payload),
   revealImage: (payload) => ipcRenderer.invoke('image:revealInFolder', payload),
   loadI18n: (lang) => ipcRenderer.invoke('i18n:load', lang),
+
+  // In-app updater (GitHub Releases)
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: (asset) => ipcRenderer.invoke('update:download', asset),
+  installUpdate: (filePath) => ipcRenderer.invoke('update:install', filePath),
+  cleanupUpdates: () => ipcRenderer.invoke('update:cleanup'),
+  onUpdateProgress: (cb) => {
+    if (typeof cb !== 'function') return;
+    ipcRenderer.on('update:progress', (_e, data) => cb(data));
+  },
 });

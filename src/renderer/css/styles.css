@@ -2087,3 +2087,83 @@ kbd {
     animation: none;
   }
 }
+
+/* ---------- Update (settings) ---------- */
+.update-field {
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 4px;
+}
+
+.update-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.update-current {
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.update-current code {
+  font-family: var(--font-code);
+  color: var(--text);
+}
+
+.update-status {
+  display: block;
+  margin-top: 6px;
+}
+
+.update-status.is-new {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.update-status.is-error {
+  color: var(--danger);
+}
+
+.update-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.update-progress.hidden,
+.update-actions.hidden {
+  display: none;
+}
+
+.update-progress-bar {
+  flex: 1;
+  height: 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+  overflow: hidden;
+}
+
+.update-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent-grad, var(--accent));
+  transition: width 0.15s ease;
+}
+
+.update-progress-text {
+  font-family: var(--font-code);
+  font-size: 11.5px;
+  color: var(--muted);
+  min-width: 38px;
+  text-align: right;
+}
+
+.update-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+

@@ -2845,6 +2845,109 @@
   }
 
   // ------------------------------------------------------------------
+  // In-app updater (GitHub Releases)
+  // ------------------------------------------------------------------
+  let updateInfo = null; // last check result
+  let updateBusy = false; // guard against concurrent check/download
+
+  function setUpdateStatus(text, cls) {
+    const node = el('updateStatus');
+    if (!node) return;
+    node.textContent = text;
+    node.classList.remove('is-new', 'is-error');
+    if (cls) node.classList.add(cls);
+  }
+
+  function showUpdateProgress(show) {
+    const box = el('updateProgress');
+    if (box) box.classList.toggle('hidden', !show);
+  }
+
+  function showUpdateActions(show) {
+    const box = el('updateActions');
+    if (box) box.classList.toggle('hidden', !show);
+  }
+
+  async function checkForUpdate(fromButton) {
+    if (updateBusy || !api.checkUpdate) return;
+    updateBusy = true;
+    showUpdateActions(false);
+    showUpdateProgress(false);
+    if (fromButton) setUpdateStatus(t('update.checking'));
+    try {
+      const res = await api.checkUpdate();
+      if (!res || !res.ok) throw new Error((res && res.error) || 'check failed');
+      updateInfo = res.info;
+      if (updateInfo.hasUpdate) {
+        setUpdateStatus(
+          t('update.available').replace('{v}', updateInfo.latestVersion),
+          'is-new'
+        );
+        el('btnDownloadUpdate').classList.remove('hidden');
+        el('btnUpdatePage').classList.remove('hidden');
+        showUpdateActions(true);
+      } else if (updateInfo.updateWithoutAsset) {
+        setUpdateStatus(
+          t('update.availableNoAsset').replace('{v}', updateInfo.latestVersion),
+          'is-new'
+        );
+        el('btnDownloadUpdate').classList.add('hidden');
+        el('btnUpdatePage').classList.remove('hidden');
+        showUpdateActions(true);
+      } else if (fromButton) {
+        setUpdateStatus(t('update.upToDate'));
+      }
+    } catch (err) {
+      if (fromButton) setUpdateStatus(t('update.checkFailed'), 'is-error');
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function downloadAndInstall() {
+    if (updateBusy || !updateInfo || !updateInfo.asset || !api.downloadUpdate) return;
+    updateBusy = true;
+    showUpdateActions(false);
+    showUpdateProgress(true);
+    el('updateProgressFill').style.width = '0%';
+    el('updateProgressText').textContent = '0%';
+    setUpdateStatus(t('update.downloading'));
+    try {
+      const res = await api.downloadUpdate(updateInfo.asset);
+      if (!res || !res.ok) throw new Error((res && res.error) || 'download failed');
+      setUpdateStatus(t('update.installing'));
+      const inst = await api.installUpdate(res.file.path);
+      if (!inst || !inst.ok) throw new Error((inst && inst.error) || 'install failed');
+      // The app quits shortly after the installer launches.
+    } catch (err) {
+      showUpdateProgress(false);
+      showUpdateActions(true);
+      setUpdateStatus(t('update.downloadFailed'), 'is-error');
+      updateBusy = false;
+    }
+  }
+
+  function wireUpdate() {
+    if (!api.checkUpdate) return;
+    if (api.onUpdateProgress) {
+      api.onUpdateProgress((data) => {
+        const total = data && data.total ? data.total : 0;
+        const received = data && data.received ? data.received : 0;
+        const pct = total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+        el('updateProgressFill').style.width = pct + '%';
+        el('updateProgressText').textContent = pct + '%';
+      });
+    }
+    el('btnCheckUpdate').addEventListener('click', () => checkForUpdate(true));
+    el('btnDownloadUpdate').addEventListener('click', downloadAndInstall);
+    el('btnUpdatePage').addEventListener('click', () => {
+      if (updateInfo && updateInfo.htmlUrl) api.openExternal(updateInfo.htmlUrl);
+    });
+    // Silent auto-check a few seconds after launch.
+    setTimeout(() => checkForUpdate(false), 3500);
+  }
+
+  // ------------------------------------------------------------------
   // Splitters
   // ------------------------------------------------------------------
   function wireSplitter(splitterId, layoutSel, cssVar, stateKey, min, max) {
@@ -3560,6 +3663,8 @@
     try {
       const v = await api.appVersion();
       el('appVersion').textContent = 'v' + v;
+      const uc = el('updateCurrent');
+      if (uc) uc.textContent = 'v' + v;
       document.title = 'M2 PROMPT v' + v;
     } catch (_e) {
       /* ignore */
@@ -3576,6 +3681,7 @@
     wireFields();
     wireViews();
     wireSettings();
+    wireUpdate();
     wireSnippets();
     wireSplitter('splitter', '.layout', '--left-width', 'leftWidth', 260, 640);
 

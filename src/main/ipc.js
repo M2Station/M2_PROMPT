@@ -11,6 +11,7 @@
 const path = require('path');
 const fs = require('fs');
 const { ipcMain, app, shell, dialog, BrowserWindow, nativeImage, clipboard } = require('electron');
+const updater = require('./update');
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -704,6 +705,55 @@ function registerIpc(options) {
     } catch (err) {
       return { ok: false, error: String(err && err.message ? err.message : err) };
     }
+  });
+
+  // -------- In-app updater (GitHub Releases) --------
+
+  // Query the latest release and report whether a newer installer exists.
+  ipcMain.handle('update:check', async () => {
+    try {
+      const info = await updater.checkForUpdate();
+      return { ok: true, info };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Download the arch-matched installer, streaming progress back to the caller
+  // over the `update:progress` channel (received / total bytes).
+  ipcMain.handle('update:download', async (e, asset) => {
+    try {
+      const sender = e.sender;
+      const result = await updater.downloadUpdate(asset, (received, total) => {
+        if (sender && !sender.isDestroyed()) {
+          sender.send('update:progress', { received, total });
+        }
+      });
+      return { ok: true, file: result };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Launch the downloaded installer and quit so it can replace the running exe.
+  ipcMain.handle('update:install', (_e, filePath) => {
+    try {
+      updater.installUpdate(filePath);
+      setTimeout(() => app.quit(), 400);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: String(err && err.message ? err.message : err) };
+    }
+  });
+
+  // Sweep any leftover downloads (called on launch).
+  ipcMain.handle('update:cleanup', () => {
+    try {
+      updater.cleanupUpdates();
+    } catch (_e) {
+      /* best-effort */
+    }
+    return true;
   });
 }
 
