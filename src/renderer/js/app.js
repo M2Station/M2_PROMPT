@@ -78,13 +78,50 @@
     return defaultState();
   }
 
-  function saveState() {
+  // Persist the whole workspace. JSON.stringify(state) is O(total size), so the
+  // hot typing path uses saveStateSoon() (debounced) instead of calling this on
+  // every keystroke; discrete actions keep saving eagerly via saveState().
+  let saveTimer = null;
+  function persistState() {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(state));
     } catch (_e) {
       /* ignore */
     }
+  }
+
+  // Eager save: write now + refresh the Save button. Cancels any pending
+  // debounced save so we never write stale-then-fresh out of order.
+  function saveState() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    persistState();
     updateSaveButton();
+  }
+
+  // Debounced save for the typing hot path: coalesces the full-state serialize
+  // + dirty-UI refresh to when typing pauses (~400ms), turning a per-keystroke
+  // O(state) cost into O(1). Flushed eagerly on blur / unload (see flushState).
+  function saveStateSoon() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      persistState();
+      updateSaveButton();
+      refreshSectionTabDirty();
+    }, 400);
+  }
+
+  // Force any pending debounced save to complete immediately (data-safety net).
+  function flushState() {
+    if (!saveTimer) return;
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    persistState();
+    updateSaveButton();
+    refreshSectionTabDirty();
   }
 
   function activeProject() {
@@ -164,11 +201,13 @@
     return (i18n && i18n[key]) || key;
   }
 
-  async function loadLang(next) {
+  async function loadLang(next, preloaded) {
     lang = next === 'en' ? 'en' : 'zh';
     state.lang = lang;
     try {
-      i18n = (await api.loadI18n(lang)) || {};
+      // `preloaded` lets init() reuse an i18n payload already fetched in
+      // parallel; falls back to a fresh fetch (e.g. the language toggle).
+      i18n = preloaded || (await api.loadI18n(lang)) || {};
     } catch (_e) {
       i18n = {};
     }
@@ -231,8 +270,16 @@
   }
 
   function counterText(text) {
-    const lines = text ? text.split('\n').length : 0;
     const chars = text ? text.length : 0;
+    // Count newlines with a single non-allocating scan (avoids split('\n')
+    // building a throwaway array on every keystroke).
+    let lines = 0;
+    if (chars) {
+      lines = 1;
+      for (let i = 0; i < chars; i += 1) {
+        if (text.charCodeAt(i) === 10) lines += 1;
+      }
+    }
     if (lang === 'zh') return `${lines} 行 · ${chars} 字元`;
     return `${lines} lines · ${chars} chars`;
   }
@@ -462,16 +509,18 @@
       key.placeholder = t('custom.key.ph');
       key.addEventListener('input', () => {
         row.key = key.value;
-        saveState();
+        saveStateSoon();
       });
+      key.addEventListener('blur', flushState);
       const val = document.createElement('input');
       val.type = 'text';
       val.value = row.value || '';
       val.placeholder = t('custom.value.ph');
       val.addEventListener('input', () => {
         row.value = val.value;
-        saveState();
+        saveStateSoon();
       });
+      val.addEventListener('blur', flushState);
       const rm = document.createElement('button');
       rm.type = 'button';
       rm.className = 'btn-remove';
@@ -680,9 +729,9 @@
     ta.addEventListener('input', () => {
       s.content = ta.value;
       el('counter').textContent = counterText(ta.value);
-      saveState();
-      refreshSectionTabDirty();
+      saveStateSoon();
     });
+    ta.addEventListener('blur', flushState);
     ta.addEventListener('keydown', (e) => handleEditorKeydown(e, ta));
     ta.addEventListener('paste', (e) => handleEditorPaste(e, ta));
     ta.addEventListener('dragover', (e) => {
@@ -2311,8 +2360,9 @@
           el('folderPreview').textContent = folderPreview();
           renderProjectTabs();
         }
-        saveState();
+        saveStateSoon();
       });
+      el(id).addEventListener('blur', flushState);
     });
 
     el('btnRefreshTime').addEventListener('click', () => {
@@ -2324,8 +2374,9 @@
 
     el('outputBase').addEventListener('input', () => {
       state.outputBase = el('outputBase').value;
-      saveState();
+      saveStateSoon();
     });
+    el('outputBase').addEventListener('blur', flushState);
 
     el('usePrefix').addEventListener('change', () => {
       state.usePrefix = el('usePrefix').checked;
@@ -3660,8 +3711,17 @@
   }
 
   async function init() {
+    // Kick off the independent startup IPC round-trips together (version,
+    // snippets, i18n) instead of awaiting them one after another.
+    const lang0 = state.lang === 'en' ? 'en' : 'zh';
+    const versionP = api.appVersion();
+    const snippetsP = api.loadSnippets();
+    const i18nP = api.loadI18n(lang0);
+
+    setAppIcon();
+
     try {
-      const v = await api.appVersion();
+      const v = await versionP;
       el('appVersion').textContent = 'v' + v;
       const uc = el('updateCurrent');
       if (uc) uc.textContent = 'v' + v;
@@ -3670,10 +3730,8 @@
       /* ignore */
     }
 
-    setAppIcon();
-
     try {
-      SNIPPETS = (await api.loadSnippets()) || {};
+      SNIPPETS = (await snippetsP) || {};
     } catch (_e) {
       SNIPPETS = {};
     }
@@ -3694,7 +3752,21 @@
       if (dragHasFiles(e)) e.preventDefault();
     });
 
-    await loadLang(state.lang || 'zh');
+    // Flush any debounced save before the window closes or is hidden, so the
+    // last keystrokes always reach localStorage.
+    window.addEventListener('beforeunload', flushState);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) flushState();
+    });
+
+    // Apply the language using the i18n payload already in flight.
+    let i18nData = null;
+    try {
+      i18nData = await i18nP;
+    } catch (_e) {
+      i18nData = null;
+    }
+    await loadLang(lang0, i18nData);
 
     // Explorer right-click hand-off: open the folder passed on launch, and keep
     // listening for folders sent by later launches while this window is open.
